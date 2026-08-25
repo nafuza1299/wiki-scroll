@@ -7,14 +7,16 @@ export interface ArticleCardProps {
   article: Article;
   refCallback: (node: HTMLElement | null) => void;
   index: number;
+  onOpen: () => void;
 }
 
-export function ArticleCard({ article, refCallback, index }: ArticleCardProps) {
+export function ArticleCard({ article, refCallback, index, onOpen }: ArticleCardProps) {
   return (
     <section
       ref={refCallback}
       data-index={index}
-      className="rounded-2xl border border-border overflow-hidden bg-bg text-text"
+      onClick={onOpen}
+      className="rounded-2xl border border-border overflow-hidden bg-bg text-text cursor-pointer hover:bg-surface-hover"
     >
       <div className="h-44 w-full flex items-center justify-center bg-surface">
         {article.thumbnailUrl ? (
@@ -29,7 +31,13 @@ export function ArticleCard({ article, refCallback, index }: ArticleCardProps) {
       </div>
       <div className="p-3 flex flex-col gap-1">
         <h2 className="text-base font-bold">
-          <a href={article.pageUrl} target="_blank" rel="noreferrer" className="hover:underline">
+          <a
+            href={article.pageUrl}
+            target="_blank"
+            rel="noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="hover:underline"
+          >
             {article.title}
           </a>
         </h2>
