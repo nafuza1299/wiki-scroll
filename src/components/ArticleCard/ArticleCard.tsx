@@ -41,6 +41,7 @@ export function ArticleCard({ article, refCallback, index }: ArticleCardProps) {
               : "views unavailable"}
           </span>
           <span>Edited {dateFormatter.format(new Date(article.lastEdited))}</span>
+          {article.createdAt && <span>Created {dateFormatter.format(new Date(article.createdAt))}</span>}
         </div>
       </div>
     </section>

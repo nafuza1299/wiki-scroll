@@ -24,23 +24,25 @@ describe("mergeArticle", () => {
     timestamp: "2024-01-01T00:00:00Z",
   };
 
-  it("merges summary fields and view count into an Article", () => {
-    const article = mergeArticle(baseSummary, 1234);
+  it("merges summary fields, view count, and created date into an Article", () => {
+    const article = mergeArticle(baseSummary, 1234, "2010-05-01T00:00:00Z");
     expect(article).toEqual({
       id: 42,
       title: "Test Article",
       extract: "An extract.",
       thumbnailUrl: "https://example.com/thumb.jpg",
       pageUrl: "https://en.wikipedia.org/wiki/Test_Article",
+      createdAt: "2010-05-01T00:00:00Z",
       lastEdited: "2024-01-01T00:00:00Z",
       viewCount30d: 1234,
     });
   });
 
-  it("falls back to a null thumbnail when none is present", () => {
+  it("falls back to null thumbnail/viewCount/createdAt when unavailable", () => {
     const { thumbnail, ...rest } = baseSummary;
-    const article = mergeArticle(rest, null);
+    const article = mergeArticle(rest, null, null);
     expect(article.thumbnailUrl).toBeNull();
     expect(article.viewCount30d).toBeNull();
+    expect(article.createdAt).toBeNull();
   });
 });

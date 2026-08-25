@@ -6,6 +6,7 @@ const BATCH_SIZE = 10;
 export function useArticleFeed() {
   const [articles, setArticles] = useState<Article[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [isFetchingMore, setIsFetchingMore] = useState(false);
   const batchInFlight = useRef(false);
   const observerRef = useRef<IntersectionObserver | null>(null);
 
@@ -21,9 +22,11 @@ export function useArticleFeed() {
     if (articles.length === 0 || batchInFlight.current) return;
     if (currentIndex === articles.length - 1) {
       batchInFlight.current = true;
+      setIsFetchingMore(true);
       fetchBatch(BATCH_SIZE).then((batch) => {
         setArticles((prev) => [...prev, ...batch]);
         batchInFlight.current = false;
+        setIsFetchingMore(false);
       });
     }
   }, [currentIndex, articles.length]);
@@ -47,5 +50,5 @@ export function useArticleFeed() {
     if (node) observerRef.current?.observe(node);
   };
 
-  return { articles, observeCard };
+  return { articles, observeCard, isFetchingMore };
 }
