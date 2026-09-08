@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { onErrorCaptured, ref } from "vue";
+import { computed, onErrorCaptured, ref } from "vue";
 import ArticleCard from "./components/ArticleCard/ArticleCard.vue";
 import Button from "./components/Button/Button.vue";
 import { Modal } from "./components/Modal/Modal";
 import Notice from "./components/Notice/Notice.vue";
+import SearchBar from "./components/SearchBar/SearchBar.vue";
 import Skeleton from "./components/Skeleton/Skeleton.vue";
 import ThemeToggle from "./components/ThemeToggle/ThemeToggle.vue";
 import type { FeedMode } from "./composables/feedReducer";
@@ -12,7 +13,32 @@ import { useSavedArticles } from "./composables/useSavedArticles";
 import { useSeenArticles } from "./composables/useSeenArticles";
 import type { Article } from "./lib/wikipedia/article";
 
-const mode = ref<FeedMode>({ kind: "random" });
+// The feed's mode is derived, not stored twice: a search and a "more like this"
+// are mutually exclusive seeds, and random is the absence of both.
+const query = ref("");
+const relatedTitle = ref<string | null>(null);
+const mode = computed<FeedMode>(() => {
+  if (relatedTitle.value) return { kind: "related", title: relatedTitle.value };
+  if (query.value) return { kind: "search", query: query.value };
+  return { kind: "random" };
+});
+
+function search(next: string): void {
+  relatedTitle.value = null;
+  query.value = next;
+}
+
+function showRelatedTo(title: string): void {
+  query.value = "";
+  relatedTitle.value = title;
+  selectedArticle.value = null;
+  view.value = "feed";
+}
+
+function backToRandom(): void {
+  query.value = "";
+  relatedTitle.value = null;
+}
 const { articles, status, more, error, retry, registerCard } = useArticleFeed(mode);
 const { saved, count: savedCount, isSaved, toggle, clear: clearSaved } = useSavedArticles();
 const { count: seenCount, clear: clearSeen } = useSeenArticles();
@@ -98,7 +124,24 @@ function reload(): void {
         </div>
       </main>
 
-      <main v-else>
+      <main v-else class="flex flex-col gap-3">
+        <SearchBar :model-value="query" @update:model-value="search" />
+
+        <!-- Says what the feed is currently showing, and how to leave it. -->
+        <div
+          v-if="mode.kind !== 'random'"
+          class="flex items-center justify-between gap-2 rounded-md bg-tag-blue-bg px-3 py-2 text-sm text-tag-blue-text"
+        >
+          <span class="min-w-0 truncate">
+            {{
+              mode.kind === "search" ? `Results for “${mode.query}”` : `Similar to ${mode.title}`
+            }}
+          </span>
+          <Button variant="ghost" size="sm" class="shrink-0" @click="backToRandom">
+            Back to random
+          </Button>
+        </div>
+
         <!-- First load. One labelled skeleton per region, not per placeholder. -->
         <div v-if="status === 'loading'" class="flex flex-col gap-3">
           <Skeleton shape="rect" class="h-44 w-full rounded-2xl" label="Loading articles" />
@@ -121,10 +164,16 @@ function reload(): void {
 
         <Notice
           v-else-if="status === 'empty'"
-          title="Nothing to show"
-          message="Wikipedia returned no articles we could display."
+          :title="mode.kind === 'search' ? 'No matches' : 'Nothing to show'"
+          :message="
+            mode.kind === 'search'
+              ? 'Try a different search.'
+              : 'Wikipedia returned no articles we could display.'
+          "
         >
-          <Button variant="secondary" @click="retry">Try again</Button>
+          <Button variant="secondary" @click="mode.kind === 'random' ? retry() : backToRandom()">
+            {{ mode.kind === "random" ? "Try again" : "Back to random" }}
+          </Button>
         </Notice>
 
         <div v-else class="flex flex-col gap-3">
@@ -188,10 +237,13 @@ function reload(): void {
             :href="selectedArticle.pageUrl"
             target="_blank"
             rel="noreferrer"
-            class="text-sm text-primary hover:underline"
+            class="mr-auto text-sm text-primary hover:underline"
           >
             Open in Wikipedia ↗
           </a>
+          <Button variant="secondary" size="sm" @click="showRelatedTo(selectedArticle.title)">
+            More like this
+          </Button>
         </Modal.Footer>
       </template>
     </Modal>

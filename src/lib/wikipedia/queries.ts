@@ -38,6 +38,58 @@ export function pageviews30dUrl(title: string, now: Date = new Date()): string {
   );
 }
 
+/*
+  Search, related and autocomplete all resolve to REST summaries rather than
+  asking the Action API for extracts inline.
+
+  A single generator=search carrying prop=extracts would be one request instead
+  of eleven, but it depends on how exlimit interacts with exintro, which this
+  environment cannot reach the API to confirm. Going through list=search plus
+  per-title summaries costs more requests and uses only shapes this app already
+  handles — and the summaries are cacheable, unlike the random endpoint.
+*/
+
+/** Titles matching a query, most relevant first. `sroffset` paginates. */
+export function searchUrl(query: string, limit: number, offset = 0): string {
+  const params = new URLSearchParams({
+    action: "query",
+    format: "json",
+    list: "search",
+    srsearch: query,
+    srnamespace: "0",
+    srlimit: String(limit),
+    sroffset: String(offset),
+    srinfo: "totalhits",
+    srprop: "",
+    origin: "*",
+  });
+  return `${ACTION}?${params.toString()}`;
+}
+
+/**
+ * "More like this" — up to ~20 summaries in one request.
+ *
+ * CirrusSearch's `morelike:` operator is the other option, but Wikimedia
+ * throttles non-cacheable morelike queries and offers no stability guarantee,
+ * and this returns a shape the app already normalises.
+ */
+export function relatedUrl(title: string): string {
+  return `${REST}/page/related/${encodeURIComponent(title.replace(/ /g, "_"))}`;
+}
+
+/** Title suggestions for the search box. */
+export function openSearchUrl(query: string, limit = 8): string {
+  const params = new URLSearchParams({
+    action: "opensearch",
+    format: "json",
+    search: query,
+    namespace: "0",
+    limit: String(limit),
+    origin: "*",
+  });
+  return `${ACTION}?${params.toString()}`;
+}
+
 /**
  * Oldest revision, which is the article's creation date.
  *

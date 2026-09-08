@@ -28,13 +28,42 @@ function summary(id: number): RestSummary {
   };
 }
 
-/** The random endpoint serves a fresh article per call, as the real one does. */
-function serveArticles(): void {
+/** Serves every mode: random draws, search hits, related pages, enrichment. */
+function serveArticles(options: { searchHits?: number; searchTotal?: number } = {}): void {
+  const { searchHits = 4, searchTotal = 4 } = options;
+
   let next = 0;
   mockRoute("/page/random/summary", () => {
     next += 1;
     return jsonResponse(summary(next));
   });
+
+  // list=search returns titles; each title is then resolved to a summary.
+  mockRoute("list=search", ({ url }) => {
+    const offset = Number(new URL(url).searchParams.get("sroffset") ?? 0);
+    const remaining = Math.max(0, searchTotal - offset);
+    const count = Math.min(searchHits, remaining);
+    return jsonResponse({
+      query: {
+        search: Array.from({ length: count }, (_, i) => ({
+          pageid: 1000 + offset + i,
+          title: `Result ${offset + i}`,
+        })),
+      },
+      ...(offset + count < searchTotal ? { continue: { sroffset: offset + count } } : {}),
+    });
+  });
+
+  mockRoute("/page/summary/", ({ url }) => {
+    const title = decodeURIComponent(url.split("/page/summary/")[1] ?? "");
+    const id = 1000 + Number(title.replace(/\D+/g, "") || 0);
+    return jsonResponse({ ...summary(id), title });
+  });
+
+  mockRoute("/page/related/", () =>
+    jsonResponse({ pages: [summary(2001), summary(2002), summary(2003)] }),
+  );
+
   mockRoute("/metrics/pageviews", () => jsonResponse({ items: [{ views: 5 }] }));
   mockRoute("prop=revisions", () => jsonResponse({ query: { pages: {} } }));
 }
@@ -231,6 +260,62 @@ describe("useArticleFeed", () => {
     for (const article of feed().articles.value) {
       expect(seen.has(article.id)).toBe(true);
     }
+  });
+
+  it("loads search results in search mode", async () => {
+    serveArticles();
+    const mode = ref<FeedMode>({ kind: "search", query: "cats" });
+    const { feed } = mountFeed(mode);
+
+    await vi.waitFor(() => expect(feed().status.value).toBe("ready"), waitOptions);
+
+    expect(feed().articles.value.every((a) => a.title.startsWith("Result"))).toBe(true);
+  });
+
+  /*
+    Search has a real end, unlike random. Once the API stops returning a
+    continuation, the feed says so rather than spinning on every scroll.
+  */
+  it("marks a search exhausted when there are no more results", async () => {
+    serveArticles({ searchHits: 2, searchTotal: 2 });
+    const mode = ref<FeedMode>({ kind: "search", query: "cats" });
+    const { feed } = mountFeed(mode);
+
+    await vi.waitFor(() => expect(feed().more.value).toBe("exhausted"), waitOptions);
+  });
+
+  it("reports an empty search rather than an error", async () => {
+    serveArticles({ searchHits: 0, searchTotal: 0 });
+    const mode = ref<FeedMode>({ kind: "search", query: "zzzzzz" });
+    const { feed } = mountFeed(mode);
+
+    await vi.waitFor(() => expect(feed().status.value).toBe("empty"), waitOptions);
+    expect(feed().error.value).toBeNull();
+  });
+
+  /*
+    The reading-history filter must not apply to search: hiding a match because
+    it was scrolled past last week would look like the search is broken.
+  */
+  it("does not hide search results that were seen before", async () => {
+    serveArticles();
+    const mode = ref<FeedMode>({ kind: "search", query: "cats" });
+    const { feed } = mountFeed(mode, makeSeen([1000, 1001, 1002, 1003]));
+
+    await vi.waitFor(() => expect(feed().status.value).toBe("ready"), waitOptions);
+
+    expect(feed().articles.value.length).toBeGreaterThan(0);
+  });
+
+  it("loads related articles in one request and then stops", async () => {
+    serveArticles();
+    const mode = ref<FeedMode>({ kind: "related", title: "Cat" });
+    const { feed } = mountFeed(mode);
+
+    await vi.waitFor(() => expect(feed().status.value).toBe("ready"), waitOptions);
+
+    expect(feed().articles.value.map((a) => a.id)).toEqual([2001, 2002, 2003]);
+    expect(feed().more.value).toBe("exhausted");
   });
 
   it("enriches cards with view counts after the page has rendered", async () => {

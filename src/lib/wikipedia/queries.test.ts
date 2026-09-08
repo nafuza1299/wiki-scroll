@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { createdDateUrl, pageviews30dUrl, randomSummaryUrl, summaryUrl } from "./queries";
+import {
+  createdDateUrl,
+  openSearchUrl,
+  pageviews30dUrl,
+  randomSummaryUrl,
+  relatedUrl,
+  searchUrl,
+  summaryUrl,
+} from "./queries";
 
 describe("randomSummaryUrl", () => {
   it("points at the REST random summary endpoint", () => {
@@ -50,6 +58,50 @@ describe("pageviews30dUrl", () => {
 
   it("underscores and encodes the title", () => {
     expect(pageviews30dUrl("AC/DC", new Date("2026-03-15T00:00:00Z"))).toContain("AC%2FDC");
+  });
+});
+
+describe("searchUrl", () => {
+  it("asks the Action API for article-namespace titles with CORS enabled", () => {
+    const params = new URL(searchUrl("cats", 10)).searchParams;
+
+    expect(params.get("list")).toBe("search");
+    expect(params.get("srsearch")).toBe("cats");
+    expect(params.get("srnamespace")).toBe("0");
+    expect(params.get("srlimit")).toBe("10");
+    expect(params.get("origin")).toBe("*");
+  });
+
+  it("carries the pagination offset", () => {
+    expect(new URL(searchUrl("cats", 10, 30)).searchParams.get("sroffset")).toBe("30");
+  });
+
+  it("escapes a query that would otherwise break the query string", () => {
+    const params = new URL(searchUrl("a&b=c", 10)).searchParams;
+    expect(params.get("srsearch")).toBe("a&b=c");
+  });
+});
+
+describe("relatedUrl", () => {
+  it("points at the REST related endpoint with an underscored title", () => {
+    expect(relatedUrl("Marie Curie")).toBe(
+      "https://en.wikipedia.org/api/rest_v1/page/related/Marie_Curie",
+    );
+  });
+
+  it("encodes a slash in the title", () => {
+    expect(relatedUrl("AC/DC")).toContain("AC%2FDC");
+  });
+});
+
+describe("openSearchUrl", () => {
+  it("asks for article-namespace suggestions", () => {
+    const params = new URL(openSearchUrl("mar")).searchParams;
+
+    expect(params.get("action")).toBe("opensearch");
+    expect(params.get("search")).toBe("mar");
+    expect(params.get("namespace")).toBe("0");
+    expect(params.get("origin")).toBe("*");
   });
 });
 

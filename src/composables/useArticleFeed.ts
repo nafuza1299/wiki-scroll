@@ -9,7 +9,13 @@ import {
 } from "vue";
 import { forEachLimit } from "../lib/concurrency";
 import type { Article } from "../lib/wikipedia/article";
-import { enrichArticle, loadRandomPage } from "../lib/wikipedia/feedSource";
+import {
+  enrichArticle,
+  loadRandomPage,
+  loadRelatedPage,
+  loadSearchPage,
+  type FeedPageResult,
+} from "../lib/wikipedia/feedSource";
 import {
   feedReducer,
   initialFeedState,
@@ -76,6 +82,7 @@ export function useArticleFeed(
   }
 
   let controller: AbortController | null = null;
+  let searchOffset = 0;
   let observer: IntersectionObserver | null = null;
 
   const indexOfElement = new WeakMap<Element, number>();
@@ -98,6 +105,42 @@ export function useArticleFeed(
     return (id) => onScreen.has(id) || seen.has(id);
   }
 
+  /**
+   * Search results are the one mode the reading-history filter must not touch:
+   * hiding a match because it was scrolled past last week would look like the
+   * search is broken.
+   */
+  function excludedForSearch(): (id: number) => boolean {
+    const onScreen = new Set(state.value.articles.map((article) => article.id));
+    return (id) => onScreen.has(id);
+  }
+
+  function loadPage(
+    current: FeedMode,
+    initial: boolean,
+    signal: AbortSignal,
+  ): Promise<FeedPageResult> {
+    switch (current.kind) {
+      case "search":
+        return loadSearchPage({
+          query: current.query,
+          size: BATCH_SIZE,
+          offset: initial ? 0 : searchOffset,
+          signal,
+          exclude: excludedForSearch(),
+        });
+      case "related":
+        return loadRelatedPage({
+          title: current.title,
+          size: BATCH_SIZE,
+          signal,
+          exclude: excludedForSearch(),
+        });
+      default:
+        return loadRandomPage({ size: BATCH_SIZE, signal, exclude: excluded() });
+    }
+  }
+
   async function load(initial: boolean): Promise<void> {
     if (!controller || controller.signal.aborted) controller = new AbortController();
     const { signal } = controller;
@@ -106,16 +149,19 @@ export function useArticleFeed(
     dispatch({ type: "page/start", generation, initial });
 
     try {
-      const page = await loadRandomPage({
-        size: BATCH_SIZE,
-        signal,
-        exclude: excluded(),
-      });
+      const page = await loadPage(mode.value, initial, signal);
       if (signal.aborted) return;
+      searchOffset = page.nextOffset ?? searchOffset;
       // Marked on arrival rather than on scroll-past: that is what makes a
       // refresh continue where it left off instead of re-serving the same page.
       seen.remember(page.articles.map((article) => article.id));
-      dispatch({ type: "page/success", generation, initial, articles: page.articles });
+      dispatch({
+        type: "page/success",
+        generation,
+        initial,
+        articles: page.articles,
+        exhausted: page.exhausted,
+      });
       enrich(page.articles, signal, generation);
     } catch (error) {
       // A cancelled request is not a failure to report — the user moved on.
@@ -164,6 +210,7 @@ export function useArticleFeed(
     () => {
       controller?.abort();
       controller = new AbortController();
+      searchOffset = 0;
       dispatch({ type: "mode/set", mode: mode.value });
       void load(true);
     },

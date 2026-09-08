@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { enrichArticle, loadRandomPage } from "./feedSource";
+import {
+  enrichArticle,
+  loadRandomPage,
+  loadRelatedPage,
+  loadSearchPage,
+  suggestTitles,
+} from "./feedSource";
 import { clearHttpCaches } from "../http";
 import { errorResponse, fetchCalls, jsonResponse, mockRoute } from "../../test/fetchMock";
 import type { RestSummary } from "./types";
@@ -111,6 +117,161 @@ describe("loadRandomPage", () => {
 
     // Over-fetches on purpose so filtering still yields a full page.
     expect(fetchCalls().length).toBeGreaterThanOrEqual(4);
+  });
+});
+
+describe("loadSearchPage", () => {
+  function serveSearch(titles: string[], nextOffset?: number): void {
+    mockRoute("list=search", () =>
+      jsonResponse({
+        query: { search: titles.map((title, i) => ({ pageid: 100 + i, title })) },
+        ...(nextOffset === undefined ? {} : { continue: { sroffset: nextOffset } }),
+      }),
+    );
+    mockRoute("/page/summary/", ({ url }) => {
+      const title = decodeURIComponent(url.split("/page/summary/")[1] ?? "");
+      return jsonResponse({ ...summary(100 + titles.indexOf(title.replace(/_/g, " "))), title });
+    });
+  }
+
+  it("resolves search hits to full articles", async () => {
+    serveSearch(["Cat", "Dog"]);
+
+    const page = await loadSearchPage({
+      query: "pets",
+      size: 10,
+      offset: 0,
+      signal: new AbortController().signal,
+    });
+
+    expect(page.articles.map((a) => a.title)).toEqual(["Cat", "Dog"]);
+  });
+
+  it("reports exhaustion when the API offers no continuation", async () => {
+    serveSearch(["Cat"]);
+
+    const page = await loadSearchPage({
+      query: "pets",
+      size: 10,
+      offset: 0,
+      signal: new AbortController().signal,
+    });
+
+    expect(page.exhausted).toBe(true);
+    expect(page.nextOffset).toBeUndefined();
+  });
+
+  it("passes the continuation offset through", async () => {
+    serveSearch(["Cat"], 10);
+
+    const page = await loadSearchPage({
+      query: "pets",
+      size: 10,
+      offset: 0,
+      signal: new AbortController().signal,
+    });
+
+    expect(page.exhausted).toBe(false);
+    expect(page.nextOffset).toBe(10);
+  });
+
+  /*
+    An empty search is a successful answer, not a failure — the feed shows "no
+    matches" rather than an error.
+  */
+  it("returns an empty, exhausted page for a query with no hits", async () => {
+    mockRoute("list=search", () => jsonResponse({ query: { search: [] } }));
+
+    const page = await loadSearchPage({
+      query: "zzzz",
+      size: 10,
+      offset: 0,
+      signal: new AbortController().signal,
+    });
+
+    expect(page.articles).toEqual([]);
+    expect(page.exhausted).toBe(true);
+  });
+
+  it("keeps the hits whose summaries resolved", async () => {
+    mockRoute("list=search", () =>
+      jsonResponse({
+        query: {
+          search: [
+            { pageid: 1, title: "Good" },
+            { pageid: 2, title: "Bad" },
+          ],
+        },
+      }),
+    );
+    mockRoute("/page/summary/", ({ url }) =>
+      url.includes("Bad") ? errorResponse(404) : jsonResponse({ ...summary(1), title: "Good" }),
+    );
+
+    const page = await loadSearchPage({
+      query: "x",
+      size: 10,
+      offset: 0,
+      signal: new AbortController().signal,
+    });
+
+    expect(page.articles.map((a) => a.title)).toEqual(["Good"]);
+  });
+});
+
+describe("loadRelatedPage", () => {
+  it("returns everything related in one request and stops", async () => {
+    mockRoute("/page/related/", () => jsonResponse({ pages: [summary(1), summary(2)] }));
+
+    const page = await loadRelatedPage({
+      title: "Cat",
+      size: 10,
+      signal: new AbortController().signal,
+    });
+
+    expect(page.articles.map((a) => a.id)).toEqual([1, 2]);
+    expect(page.exhausted).toBe(true);
+  });
+
+  it("survives a response with no related pages", async () => {
+    mockRoute("/page/related/", () => jsonResponse({}));
+
+    const page = await loadRelatedPage({
+      title: "Cat",
+      size: 10,
+      signal: new AbortController().signal,
+    });
+
+    expect(page.articles).toEqual([]);
+  });
+});
+
+describe("suggestTitles", () => {
+  it("reads titles out of the positional opensearch response", async () => {
+    mockRoute("action=opensearch", () =>
+      jsonResponse(["mar", ["Marie Curie", "Mars"], ["", ""], ["", ""]]),
+    );
+
+    await expect(suggestTitles("mar", new AbortController().signal)).resolves.toEqual([
+      "Marie Curie",
+      "Mars",
+    ]);
+  });
+
+  /*
+    Suggestions are optional. A failure here must not interrupt typing, so this
+    swallows rather than propagating.
+  */
+  it("returns nothing rather than throwing when the request fails", async () => {
+    mockRoute("action=opensearch", () => errorResponse(500));
+
+    await expect(suggestTitles("mar", new AbortController().signal)).resolves.toEqual([]);
+  });
+
+  it("tolerates an unexpected response shape", async () => {
+    mockRoute("action=opensearch", () => jsonResponse({ not: "an array" }));
+
+    await expect(suggestTitles("mar", new AbortController().signal)).resolves.toEqual([]);
   });
 });
 

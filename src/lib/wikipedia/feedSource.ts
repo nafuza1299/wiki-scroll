@@ -1,7 +1,22 @@
 import { fetchJson } from "../http";
 import { oldestRevisionTimestamp, sumPageviews, toArticle, type Article } from "./article";
-import { createdDateUrl, pageviews30dUrl, randomSummaryUrl } from "./queries";
-import type { PageviewsResponse, RestSummary, RevisionsResponse } from "./types";
+import {
+  createdDateUrl,
+  openSearchUrl,
+  pageviews30dUrl,
+  randomSummaryUrl,
+  relatedUrl,
+  searchUrl,
+  summaryUrl,
+} from "./queries";
+import type {
+  OpenSearchResponse,
+  PageviewsResponse,
+  RelatedResponse,
+  RestSummary,
+  RevisionsResponse,
+  SearchListResponse,
+} from "./types";
 
 /** How many extra summaries to request so filtering still yields a full page. */
 const OVERFETCH = 1.5;
@@ -34,6 +49,32 @@ export interface FeedPageResult {
   articles: Article[];
   /** Summaries that were fetched but not usable — disambiguation pages, stubs. */
   discarded: number;
+  /** True when the source has nothing further to give. Random never exhausts. */
+  exhausted: boolean;
+  /** Search only: the offset to ask for next. */
+  nextOffset?: number;
+}
+
+/** Shared filtering: drop unusable, duplicated, and already-seen articles. */
+function collectPage(
+  candidates: ReadonlyArray<Article | null>,
+  size: number,
+  exclude?: (id: number) => boolean,
+): { articles: Article[]; discarded: number } {
+  const articles: Article[] = [];
+  const inPage = new Set<number>();
+  let discarded = 0;
+
+  for (const article of candidates) {
+    if (!article || inPage.has(article.id) || exclude?.(article.id)) {
+      discarded += 1;
+      continue;
+    }
+    inPage.add(article.id);
+    if (articles.length < size) articles.push(article);
+  }
+
+  return { articles, discarded };
 }
 
 async function fetchRandomSummary(signal: AbortSignal): Promise<Article | null> {
@@ -65,28 +106,12 @@ export async function loadRandomPage(options: {
 
   if (signal.aborted) throw new DOMException("The operation was aborted.", "AbortError");
 
-  const articles: Article[] = [];
-  const seenInPage = new Set<number>();
-  let discarded = 0;
-  let rejected = 0;
-
-  for (const result of settled) {
-    if (result.status === "rejected") {
-      rejected += 1;
-      continue;
-    }
-    const article = result.value;
-    if (!article) {
-      discarded += 1;
-      continue;
-    }
-    if (seenInPage.has(article.id) || exclude?.(article.id)) {
-      discarded += 1;
-      continue;
-    }
-    seenInPage.add(article.id);
-    if (articles.length < size) articles.push(article);
-  }
+  const rejected = settled.filter((result) => result.status === "rejected").length;
+  const { articles, discarded } = collectPage(
+    settled.map((result) => (result.status === "fulfilled" ? result.value : null)),
+    size,
+    exclude,
+  );
 
   // Only a page with nothing at all in it is a failure. A short page is a
   // perfectly good page.
@@ -98,7 +123,74 @@ export async function loadRandomPage(options: {
     );
   }
 
-  return { articles, discarded };
+  return { articles, discarded, exhausted: false };
+}
+
+/** Summaries by title, tolerating individual failures. */
+async function summariesFor(
+  titles: readonly string[],
+  signal: AbortSignal,
+): Promise<Array<Article | null>> {
+  const settled = await Promise.allSettled(
+    titles.map((title) =>
+      // Cacheable, unlike random: the same title always means the same article.
+      fetchJson<RestSummary>(summaryUrl(title), { signal, retries: 1 }).then(toArticle),
+    ),
+  );
+  return settled.map((result) => (result.status === "fulfilled" ? result.value : null));
+}
+
+export async function loadSearchPage(options: {
+  query: string;
+  size: number;
+  offset: number;
+  signal: AbortSignal;
+  exclude?: (id: number) => boolean;
+}): Promise<FeedPageResult> {
+  const { query, size, offset, signal, exclude } = options;
+
+  const response = await fetchJson<SearchListResponse>(searchUrl(query, size, offset), { signal });
+  const hits = response.query?.search ?? [];
+  const titles = hits
+    .map((hit) => hit.title)
+    .filter((title): title is string => typeof title === "string");
+
+  // No continuation means this was the last page — a real end, unlike random.
+  const nextOffset = response.continue?.sroffset;
+  const exhausted = nextOffset === undefined;
+
+  if (titles.length === 0) {
+    return { articles: [], discarded: 0, exhausted: true };
+  }
+
+  const { articles, discarded } = collectPage(await summariesFor(titles, signal), size, exclude);
+  return { articles, discarded, exhausted, nextOffset };
+}
+
+export async function loadRelatedPage(options: {
+  title: string;
+  size: number;
+  signal: AbortSignal;
+  exclude?: (id: number) => boolean;
+}): Promise<FeedPageResult> {
+  const { title, size, signal, exclude } = options;
+
+  const response = await fetchJson<RelatedResponse>(relatedUrl(title), { signal });
+  const candidates = (response.pages ?? []).map(toArticle);
+  const { articles, discarded } = collectPage(candidates, size, exclude);
+
+  // One request returns everything related there is.
+  return { articles, discarded, exhausted: true };
+}
+
+/** Title suggestions for the search box. Never throws — suggestions are optional. */
+export async function suggestTitles(query: string, signal: AbortSignal): Promise<string[]> {
+  try {
+    const response = await fetchJson<OpenSearchResponse>(openSearchUrl(query), { signal });
+    return Array.isArray(response?.[1]) ? response[1] : [];
+  } catch {
+    return [];
+  }
 }
 
 export interface ArticleEnrichment {

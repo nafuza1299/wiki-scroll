@@ -45,6 +45,9 @@ with no key, no proxy and no server of our own:
 | What             | Endpoint                                                      |
 | ---------------- | ------------------------------------------------------------- |
 | Random article   | `en.wikipedia.org/api/rest_v1/page/random/summary`            |
+| Search           | `w/api.php?action=query&list=search`, then a summary per hit  |
+| More like this   | `en.wikipedia.org/api/rest_v1/page/related/{title}`           |
+| Suggestions      | `w/api.php?action=opensearch`                                 |
 | Page views (30d) | `wikimedia.org/api/rest_v1/metrics/pageviews/per-article/...` |
 | Creation date    | `w/api.php?action=query&prop=revisions&rvdir=newer`           |
 
@@ -54,13 +57,20 @@ page of ten costs ten blocking requests rather than thirty. Requests are
 deduplicated by URL, cached with a TTL, retried with backoff on 429/5xx only, and
 cancelled when the feed moves on.
 
-**Possible follow-up:** all of this collapses into a _single_
-`action=query&generator=random` call carrying extracts, thumbnails, URLs,
+Search goes through `list=search` plus a summary per hit rather than a single
+`generator=search` carrying extracts inline, for the same reason random does: one
+response shape the app already normalises, and summaries are cacheable by title.
+"More like this" uses the REST related endpoint over CirrusSearch's `morelike:`,
+which Wikimedia throttles for non-cacheable queries and offers no stability
+guarantee for.
+
+**Possible follow-up:** random, search and their metadata all collapse into
+_single_ `action=query&generator=…` calls carrying extracts, thumbnails, URLs,
 revisions and `prop=pageviews&pvipdays=30` for every page at once — ten cards for
-one request. It is not implemented because `exlimit` interacts with `exintro` in
-a way that needs checking against the live API, and guessing wrong breaks the
-feed rather than degrading it. Confirm with one request, then the change is
-confined to `loadRandomPage` and a new URL builder.
+one request rather than ten. Not implemented because `exlimit` interacts with
+`exintro` in a way that needs checking against the live API, and guessing wrong
+breaks the feed rather than degrading it. Confirm with one request, then the
+change is confined to the loaders in `feedSource.ts` and a new URL builder.
 
 Article text is CC BY-SA 4.0. Rendering it outside Wikipedia's own chrome would
 mean this app carries the attribution itself.

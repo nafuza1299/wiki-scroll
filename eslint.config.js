@@ -42,6 +42,10 @@ export default tseslint.config(
       // Component filenames are single-word by design (Button.vue, Modal.vue),
       // matching the vendored catalyst-ui layout.
       "vue/multi-word-component-names": "off",
+      // The rule defaults to demanding nesting *and* a for/id pair. Either one
+      // is a valid association; requiring both rules out wrapping a control in
+      // its own label, which is the more robust of the two.
+      "vuejs-accessibility/label-has-for": ["error", { required: { some: ["nesting", "id"] } }],
     },
   },
 

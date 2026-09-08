@@ -34,6 +34,23 @@ export interface RevisionsResponse {
   };
 }
 
+/** `action=query&list=search` on the Action API. */
+export interface SearchListResponse {
+  continue?: { sroffset?: number };
+  query?: {
+    search?: Array<{ pageid?: number; title?: string }>;
+    searchinfo?: { totalhits?: number };
+  };
+}
+
+/** `GET /api/rest_v1/page/related/{title}`. */
+export interface RelatedResponse {
+  pages?: RestSummary[];
+}
+
+/** `action=opensearch` returns a positional array, not an object. */
+export type OpenSearchResponse = [string, string[], string[], string[]];
+
 export function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
