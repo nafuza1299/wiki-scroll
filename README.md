@@ -11,8 +11,9 @@ whole list, and it is deliberate.
 ```bash
 npm install
 npm run dev           # dev server on :5173
-npm test              # vitest
+npm test              # vitest (unit)
 npm run test:watch    # the inner loop
+npm run test:e2e      # playwright: builds, serves, drives chromium
 npm run typecheck     # vue-tsc, includes test files
 npm run lint          # eslint
 npm run format        # prettier --write
@@ -36,6 +37,40 @@ src/
 
 Each component ships an implementation, a `.spec.md` prop contract, and a unit
 test. A component is not done without all three.
+
+## Two test suites, and why
+
+`npm test` is Vitest under jsdom: 276 tests, fast, and where almost everything
+belongs. `npm run test:e2e` is Playwright against a production build served by
+`vite preview` — 26 tests covering the four things jsdom cannot answer:
+
+| What                            | Why a unit test cannot cover it                                                                                                      |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| The CSP is enforced             | jsdom has no CSP implementation. `src/test/csp.test.ts` proves the policy text is self-consistent, not that a browser honours it.    |
+| Sanitised HTML executes nothing | The 31 sanitiser tests assert on the returned _string_. A payload can be inert as a string and live once a browser parses it.        |
+| `j`/`k` move real focus         | `focus()` and `scrollIntoView()` do nothing observable under jsdom, so the reason the shortcut moves DOM focus at all goes untested. |
+| Tab stays inside the modal      | jsdom's Tab does not move focus, so the unit test has to simulate the wrap it is checking.                                           |
+
+Every Wikimedia request is intercepted (`e2e/routes.ts`) and served from
+`e2e/fixtures.ts`. That is not only about flakiness: the security specs need
+article HTML carrying live XSS payloads, which Wikipedia will not serve.
+
+Three traps, all of which produce a suite that passes against a broken app:
+
+- **`page.evaluate` runs in an isolated world exempt from the page CSP.** `eval()`
+  called there succeeds even with no `'unsafe-eval'`. Every CSP probe works by
+  putting a node in the page's own document instead.
+- **An `innerHTML`-inserted `<script>` never executes**, policy or not. The probes
+  append real nodes.
+- **A blocked request and an unreachable host look identical.** The probes point at
+  `en.wikipedia.org`, which the interception layer serves — so when they fail, the
+  policy is the only explanation.
+
+The suite has been checked against deliberately broken builds: removing the CSP
+meta tag fails both CSP tests, and stubbing `sanitizeArticleHtml` to return its
+input fails four reader tests with `window.__pwned` set to `"img-onerror"`. Worth
+knowing what that second run showed — with the sanitiser gone but the CSP intact,
+nothing executed. The layering is real, and neither layer is load-bearing alone.
 
 ## Data
 
@@ -153,6 +188,12 @@ Two rules carry over unchanged:
 
 ## Notes
 
+- **Enter is not hijacked when a control has focus.** `useFeedKeyboard` binds
+  `Enter` globally, and calling `preventDefault()` unconditionally would stop
+  every button in the feed from activating — the retry button, "Back to random",
+  the card controls — while Space kept working, which is what makes it easy to
+  miss. Only `Enter` consults `ACTIVATABLE_SELECTOR`; `j`/`k`/`s` must not,
+  because `step()` deliberately parks focus on a card's button.
 - **`Modal` owns its own widths.** Don't pass one through `class`: it lands in the
   same class attribute as the size, and Tailwind resolves conflicts by
   generated-CSS order rather than attribute order, so the winner is not something

@@ -15,7 +15,16 @@ import globals from "globals";
   exactly what these rules catch.
 */
 export default tseslint.config(
-  { ignores: ["dist/**", "coverage/**", "node_modules/**"] },
+  {
+    ignores: [
+      "dist/**",
+      "coverage/**",
+      "node_modules/**",
+      // Playwright's own output: traces, screenshots and the HTML report.
+      "test-results/**",
+      "playwright-report/**",
+    ],
+  },
 
   js.configs.recommended,
   ...tseslint.configs.recommended,
@@ -52,6 +61,14 @@ export default tseslint.config(
   {
     files: ["**/*.test.ts", "src/test/**/*.ts"],
     languageOptions: { globals: { ...globals.browser, ...globals.node } },
+  },
+
+  {
+    // The e2e specs straddle two runtimes: the file runs in Node, and the
+    // callbacks inside page.evaluate run in the browser. Both sets of globals
+    // are legitimately in scope, so both are declared.
+    files: ["e2e/**/*.ts", "playwright.config.ts"],
+    languageOptions: { globals: { ...globals.node, ...globals.browser } },
   },
 
   // Must stay last: turns off everything Prettier owns.

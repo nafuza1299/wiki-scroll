@@ -6,3 +6,7 @@ coverage/
 .env*.local
 .DS_Store
 *.log
+
+# Playwright output
+test-results/
+playwright-report/
