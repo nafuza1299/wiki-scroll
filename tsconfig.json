@@ -10,9 +10,8 @@
     "isolatedModules": true,
     "moduleDetection": "force",
     "noEmit": true,
-    // Still react-jsx while the .tsx app exists; switches to "preserve" in the
-    // commit that deletes the last React component.
-    "jsx": "react-jsx",
+    "jsx": "preserve",
+    "jsxImportSource": "vue",
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,

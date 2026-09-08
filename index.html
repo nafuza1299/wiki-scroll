@@ -1,12 +1,36 @@
 <!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Wiki Scroll</title>
+    <script>
+      /*
+        Blocking on purpose. This resolves the theme and writes [data-theme]
+        before the first paint, so the page never flashes the wrong one. The app
+        reads the attribute back rather than resolving again, which is what keeps
+        its first render in agreement with markup already on screen.
+      */
+      (function () {
+        try {
+          var stored = localStorage.getItem("wiki-scroll:theme");
+          if (stored === "light" || stored === "dark") {
+            document.documentElement.dataset.theme = stored;
+            return;
+          }
+        } catch (error) {
+          // Private mode or storage disabled — fall through to the OS preference.
+        }
+        document.documentElement.dataset.theme = window.matchMedia(
+          "(prefers-color-scheme: dark)",
+        ).matches
+          ? "dark"
+          : "light";
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
