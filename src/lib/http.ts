@@ -253,6 +253,14 @@ function request<T>(
       if (inFlight.get(url) === entry) inFlight.delete(url);
     });
 
+  /*
+    The shared promise must always carry a rejection handler of its own. A caller
+    whose signal has already aborted rejects immediately without ever attaching
+    one, and if it was the only caller the shared rejection would surface as an
+    unhandled promise rejection. join() adds the real handlers on top.
+  */
+  entry.promise.catch(() => {});
+
   inFlight.set(url, entry);
   return join<T>(entry, signal);
 }

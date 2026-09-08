@@ -1,44 +1,122 @@
-import { onMounted, onScopeDispose, ref, shallowRef, watch } from "vue";
+import {
+  computed,
+  onMounted,
+  onScopeDispose,
+  shallowRef,
+  watch,
+  type ComputedRef,
+  type Ref,
+} from "vue";
 import { forEachLimit } from "../lib/concurrency";
 import type { Article } from "../lib/wikipedia/article";
 import { enrichArticle, loadRandomPage } from "../lib/wikipedia/feedSource";
+import {
+  feedReducer,
+  initialFeedState,
+  serializeMode,
+  type FeedAction,
+  type FeedMode,
+  type FeedState,
+} from "./feedReducer";
 
 const BATCH_SIZE = 10;
 const ENRICH_CONCURRENCY = 4;
 
-/*
-  Wired to the new data layer, but the state machine is unchanged: there is still
-  no .catch() on either load path, so a total failure still hangs on the
-  skeleton. That is fixed in the next commit, which replaces this whole
-  composable; keeping the two apart is what makes either diff readable.
-*/
-export function useArticleFeed(): {
-  articles: typeof articles;
-  isFetchingMore: typeof isFetchingMore;
-  observeCard: (element: Element | null) => void;
-} {
-  const articles = shallowRef<Article[]>([]);
-  const currentIndex = ref(0);
-  const isFetchingMore = ref(false);
+/**
+ * Load the next page this many cards before the end, rather than at the last
+ * card — where the old implementation triggered, which is why you reached the
+ * bottom and then waited.
+ */
+const PREFETCH_AHEAD = 3;
 
-  let batchInFlight = false;
+export interface ArticleFeed {
+  articles: ComputedRef<Article[]>;
+  status: ComputedRef<FeedState["status"]>;
+  more: ComputedRef<FeedState["more"]>;
+  error: ComputedRef<string | null>;
+  activeIndex: ComputedRef<number>;
+  retry: () => void;
+  loadMore: () => void;
+  registerCard: (index: number) => (target: unknown) => void;
+}
+
+/**
+ * A template ref hands back an element for a plain tag and a component instance
+ * for a component. Resolving both here keeps callers from having to adapt, which
+ * is what previously forced a fresh closure per render.
+ */
+function resolveElement(target: unknown): Element | null {
+  if (target instanceof Element) return target;
+  const element = (target as { $el?: unknown } | null)?.$el;
+  return element instanceof Element ? element : null;
+}
+
+export function useArticleFeed(mode: Ref<FeedMode>): ArticleFeed {
+  // shallowRef plus whole-state replacement: the reducer already returns new
+  // objects, so deep reactivity would proxy every Article for nothing.
+  const state = shallowRef<FeedState>(initialFeedState(mode.value));
+
+  function dispatch(action: FeedAction): void {
+    state.value = feedReducer(state.value, action);
+  }
+
+  let controller: AbortController | null = null;
   let observer: IntersectionObserver | null = null;
-  const controller = new AbortController();
 
-  /**
-   * Patches view counts and creation dates onto cards that are already on
-   * screen. Enrichment never fails the page — a card without a view count is
-   * still a card.
-   */
-  function enrich(page: readonly Article[]): void {
+  const indexOfElement = new WeakMap<Element, number>();
+  const elementOfIndex = new Map<number, Element>();
+  const refCallbacks = new Map<number, (target: unknown) => void>();
+
+  function enrich(page: readonly Article[], signal: AbortSignal, generation: number): void {
     void forEachLimit(page, ENRICH_CONCURRENCY, async (article) => {
-      const extra = await enrichArticle(article.title, controller.signal);
-      articles.value = articles.value.map((current) =>
-        current.id === article.id ? { ...current, ...extra } : current,
-      );
+      const patch = await enrichArticle(article.title, signal);
+      if (signal.aborted || state.value.generation !== generation) return;
+      dispatch({ type: "article/enrich", id: article.id, patch });
     }).catch(() => {
-      // Cancelled, or the network is gone. The cards stand as they are.
+      // Enrichment is decoration. Cards stand as they are.
     });
+  }
+
+  async function load(initial: boolean): Promise<void> {
+    if (!controller || controller.signal.aborted) controller = new AbortController();
+    const { signal } = controller;
+    const generation = state.value.generation;
+
+    dispatch({ type: "page/start", generation, initial });
+
+    try {
+      const page = await loadRandomPage({
+        size: BATCH_SIZE,
+        signal,
+        exclude: new Set(state.value.articles.map((article) => article.id)),
+      });
+      if (signal.aborted) return;
+      dispatch({ type: "page/success", generation, initial, articles: page.articles });
+      enrich(page.articles, signal, generation);
+    } catch (error) {
+      // A cancelled request is not a failure to report — the user moved on.
+      if (error instanceof Error && error.name === "AbortError") return;
+      if (signal.aborted) return;
+      dispatch({
+        type: "page/failure",
+        generation,
+        initial,
+        message: error instanceof Error ? error.message : "Something went wrong.",
+      });
+    }
+  }
+
+  function loadMore(): void {
+    const { status, more } = state.value;
+    if (status !== "ready") return;
+    // Re-entrancy guard: scrolling fires the observer far more often than a
+    // page can load.
+    if (more === "loading" || more === "exhausted") return;
+    void load(false);
+  }
+
+  function retry(): void {
+    void load(state.value.status === "error");
   }
 
   onMounted(() => {
@@ -46,46 +124,80 @@ export function useArticleFeed(): {
       (entries) => {
         for (const entry of entries) {
           if (!entry.isIntersecting) continue;
-          currentIndex.value = Number((entry.target as HTMLElement).dataset.index);
+          const index = indexOfElement.get(entry.target);
+          if (index !== undefined) dispatch({ type: "activeIndex/set", index });
         }
       },
-      { threshold: 0.5 },
+      // Start the next page while the previous one is still on screen.
+      { threshold: 0.5, rootMargin: "0px 0px 400px 0px" },
     );
-
-    batchInFlight = true;
-    void loadRandomPage({ size: BATCH_SIZE, signal: controller.signal }).then((page) => {
-      articles.value = page.articles;
-      batchInFlight = false;
-      enrich(page.articles);
-    });
+    void load(true);
   });
 
-  watch([currentIndex, () => articles.value.length], ([index, length]) => {
-    if (length === 0 || batchInFlight) return;
-    if (index !== length - 1) return;
+  watch(
+    // Keyed on a stable string so an inline object literal does not retrigger.
+    () => serializeMode(mode.value),
+    () => {
+      controller?.abort();
+      controller = new AbortController();
+      dispatch({ type: "mode/set", mode: mode.value });
+      void load(true);
+    },
+  );
 
-    batchInFlight = true;
-    isFetchingMore.value = true;
-    void loadRandomPage({
-      size: BATCH_SIZE,
-      signal: controller.signal,
-      exclude: new Set(articles.value.map((article) => article.id)),
-    }).then((page) => {
-      articles.value = [...articles.value, ...page.articles];
-      batchInFlight = false;
-      isFetchingMore.value = false;
-      enrich(page.articles);
-    });
-  });
+  watch(
+    () => [state.value.activeIndex, state.value.articles.length, state.value.more] as const,
+    ([activeIndex, length]) => {
+      if (length === 0) return;
+      if (activeIndex >= length - PREFETCH_AHEAD) loadMore();
+    },
+  );
 
   onScopeDispose(() => {
-    controller.abort();
+    controller?.abort();
     observer?.disconnect();
+    elementOfIndex.clear();
+    refCallbacks.clear();
   });
 
-  function observeCard(element: Element | null): void {
-    if (element) observer?.observe(element);
+  /*
+    One stable callback per index. Returning a fresh closure each render would
+    make Vue tear the ref down and set it up again on every update, which is
+    both wasted work and a good way to lose observations.
+  */
+  function registerCard(index: number): (target: unknown) => void {
+    let callback = refCallbacks.get(index);
+    if (callback) return callback;
+
+    callback = (target: unknown): void => {
+      const element = resolveElement(target);
+      if (element) {
+        indexOfElement.set(element, index);
+        elementOfIndex.set(index, element);
+        observer?.observe(element);
+        return;
+      }
+      // Vue passes null on unmount. The old implementation had no equivalent
+      // branch at all, so observations accumulated for the whole session.
+      const previous = elementOfIndex.get(index);
+      if (previous) {
+        observer?.unobserve(previous);
+        elementOfIndex.delete(index);
+      }
+    };
+
+    refCallbacks.set(index, callback);
+    return callback;
   }
 
-  return { articles, isFetchingMore, observeCard };
+  return {
+    articles: computed(() => state.value.articles),
+    status: computed(() => state.value.status),
+    more: computed(() => state.value.more),
+    error: computed(() => state.value.error),
+    activeIndex: computed(() => state.value.activeIndex),
+    retry,
+    loadMore,
+    registerCard,
+  };
 }
