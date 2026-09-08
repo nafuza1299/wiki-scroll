@@ -23,5 +23,14 @@
   },
   // Tests are included on purpose: they were excluded here *and* missed by the
   // old Jest `testMatch`, so nothing typechecked them.
-  "include": ["src/**/*.ts", "src/**/*.vue", "vite.config.ts"]
+  // e2e is included for the same reason src tests are: code nothing typechecks
+  // is code that drifts. Playwright brings its own types, and the specs never
+  // reach production output.
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.vue",
+    "vite.config.ts",
+    "playwright.config.ts",
+    "e2e/**/*.ts"
+  ]
 }
