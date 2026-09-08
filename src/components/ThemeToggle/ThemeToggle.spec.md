@@ -26,8 +26,8 @@ first paint), `src/composables/useTheme.ts` (reads it, then owns it), and
 `[data-theme]` first and only falls through to storage when it is absent. The
 blocking script has already painted with the attribute, so the app's first render
 has to agree with what is on screen — otherwise the page flashes, and under SSR
-the render disagrees with the markup. Storage is where the choice is *persisted*;
-the attribute is what is currently *true*. Do not reorder them.
+the render disagrees with the markup. Storage is where the choice is _persisted_;
+the attribute is what is currently _true_. Do not reorder them.
 
 ## Usage
 

@@ -4,24 +4,24 @@ A controlled, teleported dialog for confirmations, forms, and focused tasks.
 
 ## Props
 
-| Prop | Type | Default | Notes |
-|---|---|---|---|
-| `open` | `boolean` | required | The caller owns visibility. |
-| `size` | `"sm" \| "md" \| "lg" \| "reader"` | `"md"` | `sm` max-w-sm, `md` max-w-lg, `lg` max-w-2xl, `reader` max-w-3xl at a fixed 85vh. |
-| `closeOnOverlayClick` | `boolean` | `true` | Set false for explicit-action flows. |
-| `closeOnEscape` | `boolean` | `true` | Set false only when Escape must not abandon the flow. |
-| `loading` | `boolean` | `false` | Replaces content with `Modal.Skeleton`. |
+| Prop                  | Type                               | Default  | Notes                                                                             |
+| --------------------- | ---------------------------------- | -------- | --------------------------------------------------------------------------------- |
+| `open`                | `boolean`                          | required | The caller owns visibility.                                                       |
+| `size`                | `"sm" \| "md" \| "lg" \| "reader"` | `"md"`   | `sm` max-w-sm, `md` max-w-lg, `lg` max-w-2xl, `reader` max-w-3xl at a fixed 85vh. |
+| `closeOnOverlayClick` | `boolean`                          | `true`   | Set false for explicit-action flows.                                              |
+| `closeOnEscape`       | `boolean`                          | `true`   | Set false only when Escape must not abandon the flow.                             |
+| `loading`             | `boolean`                          | `false`  | Replaces content with `Modal.Skeleton`.                                           |
 
 ## Events
 
-| Event | Payload | Notes |
-|---|---|---|
+| Event         | Payload   | Notes                                                             |
+| ------------- | --------- | ----------------------------------------------------------------- |
 | `update:open` | `boolean` | Emits `false` for every dismissal route, so `v-model:open` works. |
 
 ### `Modal.Body`
 
-| Prop | Type | Default | Notes |
-|---|---|---|---|
+| Prop         | Type      | Default | Notes                                                                                                  |
+| ------------ | --------- | ------- | ------------------------------------------------------------------------------------------------------ |
 | `scrollable` | `boolean` | `false` | Makes the body focusable and claims initial focus. Set it when the body holds long scrollable content. |
 
 ## Behavior and accessibility

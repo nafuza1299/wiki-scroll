@@ -4,10 +4,10 @@ An animated placeholder standing in for content that has not loaded yet.
 
 ## Props
 
-| Prop | Type | Default | Notes |
-|---|---|---|---|
+| Prop    | Type                           | Default  | Notes                                                                          |
+| ------- | ------------------------------ | -------- | ------------------------------------------------------------------------------ |
 | `shape` | `"text" \| "circle" \| "rect"` | `"text"` | `text` is a single line; `circle` needs a width; `rect` needs both dimensions. |
-| `label` | `string` | — | Supply on **one** skeleton per loading region, not every one. |
+| `label` | `string`                       | —        | Supply on **one** skeleton per loading region, not every one.                  |
 
 Sizing comes from `class` — `shape` only sets the silhouette.
 

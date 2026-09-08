@@ -48,9 +48,7 @@ async function mockFetch(input: RequestInfo | URL, init?: RequestInit): Promise<
   if (signal?.aborted) throw abortError();
 
   const route = routes.find((candidate) =>
-    typeof candidate.match === "string"
-      ? url.includes(candidate.match)
-      : candidate.match.test(url),
+    typeof candidate.match === "string" ? url.includes(candidate.match) : candidate.match.test(url),
   );
 
   if (!route) {

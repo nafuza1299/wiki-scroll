@@ -1,3 +1,12 @@
+/*
+  eslint-disable @typescript-eslint/no-explicit-any --
+  The API boundary is untyped: mergeArticle and fetchRandomSummary take and
+  return `any` in an otherwise strict codebase. This file is replaced wholesale
+  by the typed lib/wikipedia/ split in the next commit, which is where the
+  guards and DTOs land; disabling here rather than half-typing a file that is
+  about to be deleted.
+*/
+
 export interface Article {
   id: number;
   title: string;

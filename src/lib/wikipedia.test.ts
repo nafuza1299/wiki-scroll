@@ -39,7 +39,7 @@ describe("mergeArticle", () => {
   });
 
   it("falls back to null thumbnail/viewCount/createdAt when unavailable", () => {
-    const { thumbnail, ...rest } = baseSummary;
+    const { thumbnail: _thumbnail, ...rest } = baseSummary;
     const article = mergeArticle(rest, null, null);
     expect(article.thumbnailUrl).toBeNull();
     expect(article.viewCount30d).toBeNull();

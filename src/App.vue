@@ -49,17 +49,11 @@ function registerCard(instance: unknown): void {
       />
 
       <div v-if="isFetchingMore" class="flex justify-center py-4">
-        <div
-          class="h-6 w-6 rounded-full border-2 border-border border-t-primary animate-spin"
-        />
+        <div class="h-6 w-6 rounded-full border-2 border-border border-t-primary animate-spin" />
       </div>
     </div>
 
-    <Modal
-      :open="selectedArticle !== null"
-      size="reader"
-      @update:open="selectedArticle = null"
-    >
+    <Modal :open="selectedArticle !== null" size="reader" @update:open="selectedArticle = null">
       <template v-if="selectedArticle">
         <Modal.Header>
           <Modal.Title>{{ selectedArticle.title }}</Modal.Title>

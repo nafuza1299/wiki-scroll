@@ -18,7 +18,11 @@ const shapeStyles: Record<SkeletonShape, string> = {
 <script setup lang="ts">
 import { computed } from "vue";
 
-const props = withDefaults(defineProps<SkeletonProps>(), { shape: "text" });
+const props = withDefaults(defineProps<SkeletonProps>(), {
+  shape: "text",
+  // Absent by design: no label means decorative, which is the common case.
+  label: undefined,
+});
 
 const classes = computed(() => [
   "animate-pulse bg-surface-hover motion-reduce:animate-none",

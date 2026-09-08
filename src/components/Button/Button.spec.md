@@ -5,21 +5,21 @@ navigation link should be this.
 
 ## Props
 
-| Prop | Type | Default | Notes |
-|---|---|---|---|
-| `variant` | `"primary" \| "secondary" \| "ghost" \| "destructive"` | `"primary"` | One primary per view; `destructive` only for irreversible actions. |
-| `size` | `"sm" \| "md" \| "lg"` | `"md"` | Affects height, padding, and font-size. |
-| `loading` | `boolean` | `false` | Shows a spinner and disables interaction. The button keeps its width. |
-| `iconOnly` | `boolean` | `false` | Enforces a square shape. **Requires `aria-label`** — there is no text to read. |
-| `disabled` | `boolean` | `false` | |
+| Prop       | Type                                                   | Default     | Notes                                                                          |
+| ---------- | ------------------------------------------------------ | ----------- | ------------------------------------------------------------------------------ |
+| `variant`  | `"primary" \| "secondary" \| "ghost" \| "destructive"` | `"primary"` | One primary per view; `destructive` only for irreversible actions.             |
+| `size`     | `"sm" \| "md" \| "lg"`                                 | `"md"`      | Affects height, padding, and font-size.                                        |
+| `loading`  | `boolean`                                              | `false`     | Shows a spinner and disables interaction. The button keeps its width.          |
+| `iconOnly` | `boolean`                                              | `false`     | Enforces a square shape. **Requires `aria-label`** — there is no text to read. |
+| `disabled` | `boolean`                                              | `false`     |                                                                                |
 
 Attributes not listed here (`aria-label`, `title`, `form`, …) fall through to the
 `<button>` element.
 
 ## Events
 
-| Event | Payload | Notes |
-|---|---|---|
+| Event   | Payload      | Notes                                             |
+| ------- | ------------ | ------------------------------------------------- |
 | `click` | `MouseEvent` | Native; suppressed while `loading` or `disabled`. |
 
 ## Behavior and accessibility

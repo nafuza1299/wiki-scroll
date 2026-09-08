@@ -21,9 +21,8 @@
         } catch (error) {
           // Private mode or storage disabled — fall through to the OS preference.
         }
-        document.documentElement.dataset.theme = window.matchMedia(
-          "(prefers-color-scheme: dark)",
-        ).matches
+        document.documentElement.dataset.theme = window.matchMedia("(prefers-color-scheme: dark)")
+          .matches
           ? "dark"
           : "light";
       })();

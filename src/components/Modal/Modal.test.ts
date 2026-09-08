@@ -17,7 +17,17 @@ function renderModal(
   return render(Modal, {
     props: { open: true, ...props },
     slots: slot(() => [
-      h(Modal.Header, null, slot(() => h(Modal.Title, null, slot(() => "Delete project")))),
+      h(
+        Modal.Header,
+        null,
+        slot(() =>
+          h(
+            Modal.Title,
+            null,
+            slot(() => "Delete project"),
+          ),
+        ),
+      ),
       h(
         Modal.Body,
         bodyProps,
