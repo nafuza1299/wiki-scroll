@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/vue";
 import userEvent from "@testing-library/user-event";
 import ArticleCard from "./ArticleCard.vue";
-import type { Article } from "../../lib/wikipedia";
+import type { Article } from "../../lib/wikipedia/article";
 
 const article: Article = {
   id: 42,
@@ -91,6 +91,24 @@ describe("ArticleCard", () => {
     renderCard({ createdAt: null });
 
     expect(screen.queryByText(/^Created /)).not.toBeInTheDocument();
+  });
+
+  /*
+    The card used to render `new Date(article.lastEdited)` unguarded, so a
+    payload with a bad or absent timestamp printed the literal string
+    "Invalid Date" into the metadata row.
+  */
+  it("never renders 'Invalid Date'", () => {
+    renderCard({ lastEdited: "not a date", createdAt: "also not a date" });
+
+    expect(screen.queryByText(/Invalid Date/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Edited /)).not.toBeInTheDocument();
+  });
+
+  it("omits the edited date when the API returned none", () => {
+    renderCard({ lastEdited: null });
+
+    expect(screen.queryByText(/^Edited /)).not.toBeInTheDocument();
   });
 
   it("falls back to a placeholder when there is no thumbnail", () => {

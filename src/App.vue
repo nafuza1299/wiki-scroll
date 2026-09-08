@@ -5,7 +5,7 @@ import { Modal } from "./components/Modal/Modal";
 import Skeleton from "./components/Skeleton/Skeleton.vue";
 import ThemeToggle from "./components/ThemeToggle/ThemeToggle.vue";
 import { useArticleFeed } from "./composables/useArticleFeed";
-import type { Article } from "./lib/wikipedia";
+import type { Article } from "./lib/wikipedia/article";
 
 const { articles, isFetchingMore, observeCard } = useArticleFeed();
 

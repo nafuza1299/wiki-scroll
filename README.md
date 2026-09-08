@@ -48,9 +48,19 @@ with no key, no proxy and no server of our own:
 | Page views (30d) | `wikimedia.org/api/rest_v1/metrics/pageviews/per-article/...` |
 | Creation date    | `w/api.php?action=query&prop=revisions&rvdir=newer`           |
 
-That is three requests per article, so a batch of ten costs thirty — none of them
-cached, deduplicated or cancellable. Replacing it with a single batched
-`action=query&generator=random` call is in progress.
+Only the first blocks. View counts and creation dates are fetched afterwards, at
+most four at a time, and patched onto cards that are already on screen — so a
+page of ten costs ten blocking requests rather than thirty. Requests are
+deduplicated by URL, cached with a TTL, retried with backoff on 429/5xx only, and
+cancelled when the feed moves on.
+
+**Possible follow-up:** all of this collapses into a _single_
+`action=query&generator=random` call carrying extracts, thumbnails, URLs,
+revisions and `prop=pageviews&pvipdays=30` for every page at once — ten cards for
+one request. It is not implemented because `exlimit` interacts with `exintro` in
+a way that needs checking against the live API, and guessing wrong breaks the
+feed rather than degrading it. Confirm with one request, then the change is
+confined to `loadRandomPage` and a new URL builder.
 
 Article text is CC BY-SA 4.0. Rendering it outside Wikipedia's own chrome would
 mean this app carries the attribution itself.

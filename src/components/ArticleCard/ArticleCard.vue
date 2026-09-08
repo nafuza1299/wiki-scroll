@@ -1,16 +1,21 @@
 <script setup lang="ts">
-import type { Article } from "../../lib/wikipedia";
-
-const viewFormatter = new Intl.NumberFormat("en-US", { notation: "compact" });
-const dateFormatter = new Intl.DateTimeFormat("en-US", { dateStyle: "medium" });
+import { computed } from "vue";
+import { formatDate, formatViews } from "../../lib/format";
+import type { Article } from "../../lib/wikipedia/article";
 
 export interface ArticleCardProps {
   article: Article;
   index: number;
 }
 
-defineProps<ArticleCardProps>();
+const props = defineProps<ArticleCardProps>();
 defineEmits<{ open: [] }>();
+
+// Both can be null: the API may omit a timestamp, and it may be unparseable.
+// A field that cannot be formatted is omitted rather than shown as nonsense.
+const editedOn = computed(() => formatDate(props.article.lastEdited));
+const createdOn = computed(() => formatDate(props.article.createdAt));
+const views = computed(() => formatViews(props.article.viewCount30d));
 </script>
 
 <!--
@@ -35,6 +40,8 @@ defineEmits<{ open: [] }>();
         v-if="article.thumbnailUrl"
         :src="article.thumbnailUrl"
         :alt="article.title"
+        loading="lazy"
+        decoding="async"
         class="h-full w-full object-cover"
       />
       <span v-else class="text-4xl font-bold text-text-muted">W</span>
@@ -51,17 +58,9 @@ defineEmits<{ open: [] }>();
       </h2>
       <p class="line-clamp-2 text-sm text-text-muted">{{ article.extract }}</p>
       <div class="flex flex-wrap gap-3 text-xs text-text-muted">
-        <span>
-          {{
-            article.viewCount30d !== null
-              ? `${viewFormatter.format(article.viewCount30d)} views / 30d`
-              : "views unavailable"
-          }}
-        </span>
-        <span>Edited {{ dateFormatter.format(new Date(article.lastEdited)) }}</span>
-        <span v-if="article.createdAt">
-          Created {{ dateFormatter.format(new Date(article.createdAt)) }}
-        </span>
+        <span>{{ views }}</span>
+        <span v-if="editedOn">Edited {{ editedOn }}</span>
+        <span v-if="createdOn">Created {{ createdOn }}</span>
         <a
           :href="article.pageUrl"
           target="_blank"
