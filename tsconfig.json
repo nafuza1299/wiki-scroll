@@ -8,13 +8,21 @@
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
+    "moduleDetection": "force",
     "noEmit": true,
+    // Still react-jsx while the .tsx app exists; switches to "preserve" in the
+    // commit that deletes the last React component.
     "jsx": "react-jsx",
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+    "types": ["node", "vite/client", "vitest/globals"],
+    // Keeps the build artifact out of the repo root, where it was previously
+    // committed and went stale.
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.tsbuildinfo"
   },
-  "include": ["src"],
-  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"]
+  // Tests are included on purpose: they were excluded here *and* missed by the
+  // old Jest `testMatch`, so nothing typechecked them.
+  "include": ["src/**/*.ts", "src/**/*.vue", "vite.config.ts"]
 }
