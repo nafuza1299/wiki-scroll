@@ -1,4 +1,4 @@
-import { fetchText } from "../http";
+import { fetchText, isAbortError } from "../http";
 
 const REST = "https://en.wikipedia.org/api/rest_v1";
 const ACTION = "https://en.wikipedia.org/w/api.php";
@@ -38,7 +38,7 @@ export async function fetchArticleHtml(title: string, signal: AbortSignal): Prom
   try {
     return await fetchText(mobileHtmlUrl(title), { signal, retries: 1 });
   } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") throw error;
+    if (isAbortError(error)) throw error;
     const response = await fetchJsonParse(title, signal);
     if (response) return response;
     throw error;

@@ -72,6 +72,29 @@ one request rather than ten. Not implemented because `exlimit` interacts with
 breaks the feed rather than degrading it. Confirm with one request, then the
 change is confined to the loaders in `feedSource.ts` and a new URL builder.
 
+## Keyboard and links
+
+| Key         | Action                             |
+| ----------- | ---------------------------------- |
+| `j` / `k`   | Move between articles              |
+| `Enter`/`o` | Open the current article           |
+| `s`         | Save or unsave the current article |
+| `/`         | Focus the search box               |
+| `Esc`       | Back to the random feed            |
+| `?`         | Show the shortcut list             |
+
+Arrow keys are deliberately left alone — they are a keyboard user's only way to
+scroll the page, and `j`/`k` do the same job without taking that away. `j`/`k`
+move real DOM focus, not just the scroll position, so the change is announced
+rather than silent.
+
+State lives in the query string (`?q=`, `?like=`, `?article=`, `?view=saved`),
+never the path: there is no server here, and a static host answers `/article/Foo`
+with a 404 unless someone writes a rewrite rule. Opening an article pushes a
+history entry, so Back closes the reader — which is what the hardware Back button
+is expected to do. A `?article=` link opens in a cold tab with no feed behind it,
+which is why the reader takes a title rather than an article object.
+
 ## The reader
 
 Opening a card fetches `mobile-html`, sanitises it, and renders it inline with

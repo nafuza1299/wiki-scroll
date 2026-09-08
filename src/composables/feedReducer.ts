@@ -41,6 +41,7 @@ export type FeedAction =
     }
   | { type: "page/failure"; generation: number; initial: boolean; message: string }
   | { type: "activeIndex/set"; index: number }
+  | { type: "activeIndex/step"; delta: number }
   | { type: "article/enrich"; id: number; patch: Partial<Article> };
 
 export function serializeMode(mode: FeedMode): string {
@@ -133,6 +134,12 @@ export function feedReducer(state: FeedState, action: FeedAction): FeedState {
 
     case "activeIndex/set":
       return { ...state, activeIndex: clamp(action.index, state.articles.length) };
+
+    case "activeIndex/step":
+      return {
+        ...state,
+        activeIndex: clamp(state.activeIndex + action.delta, state.articles.length),
+      };
 
     case "article/enrich": {
       let changed = false;

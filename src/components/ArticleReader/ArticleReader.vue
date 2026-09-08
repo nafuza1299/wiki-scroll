@@ -3,6 +3,7 @@ import { computed, onScopeDispose, ref, watch } from "vue";
 import Button from "../Button/Button.vue";
 import Notice from "../Notice/Notice.vue";
 import Skeleton from "../Skeleton/Skeleton.vue";
+import { isAbortError } from "../../lib/http";
 import { sanitizeArticleHtml } from "../../lib/sanitizeArticleHtml";
 import { fetchArticleHtml } from "../../lib/wikipedia/html";
 import "./reader.css";
@@ -38,7 +39,7 @@ async function load(): Promise<void> {
     if (signal.aborted) return;
     html.value = sanitizeArticleHtml(raw, { baseUrl: props.pageUrl });
   } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") return;
+    if (isAbortError(error)) return;
     failed.value = true;
   } finally {
     if (!signal.aborted) loading.value = false;

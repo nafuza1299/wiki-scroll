@@ -44,8 +44,19 @@ function abortError(): DOMException {
   return new DOMException("The operation was aborted.", "AbortError");
 }
 
-function isAbortError(error: unknown): boolean {
-  return error instanceof Error && error.name === "AbortError";
+/*
+  Duck-typed on purpose. `error instanceof Error` looks like the obvious check
+  and is not reliable: DOMException does not extend Error under jsdom, and has
+  not always done so in browsers either. Where that check fails, a cancelled
+  request is misreported to the user as a failure — so every abort check in the
+  app goes through this one function.
+*/
+export function isAbortError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as { name?: unknown }).name === "AbortError"
+  );
 }
 
 function isRetriableStatus(status: number): boolean {

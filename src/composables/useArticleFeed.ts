@@ -8,6 +8,7 @@ import {
   type Ref,
 } from "vue";
 import { forEachLimit } from "../lib/concurrency";
+import { isAbortError } from "../lib/http";
 import type { Article } from "../lib/wikipedia/article";
 import {
   enrichArticle,
@@ -53,6 +54,10 @@ export interface ArticleFeed {
   activeIndex: ComputedRef<number>;
   retry: () => void;
   loadMore: () => void;
+  /** Moves the active card and takes focus with it. */
+  step: (delta: 1 | -1) => void;
+  /** The article the keyboard is currently on, if any. */
+  activeArticle: () => Article | null;
   registerCard: (index: number) => (target: unknown) => void;
 }
 
@@ -83,6 +88,12 @@ export function useArticleFeed(
 
   let controller: AbortController | null = null;
   let searchOffset = 0;
+  /*
+    step() scrolls smoothly, and the observer fires for every card passed on the
+    way, each one overwriting activeIndex. Without this guard, pressing j once
+    lands somewhere other than the next card.
+  */
+  let suppressObserverUntil = 0;
   let observer: IntersectionObserver | null = null;
 
   const indexOfElement = new WeakMap<Element, number>();
@@ -165,7 +176,7 @@ export function useArticleFeed(
       enrich(page.articles, signal, generation);
     } catch (error) {
       // A cancelled request is not a failure to report — the user moved on.
-      if (error instanceof Error && error.name === "AbortError") return;
+      if (isAbortError(error)) return;
       if (signal.aborted) return;
       dispatch({
         type: "page/failure",
@@ -194,6 +205,7 @@ export function useArticleFeed(
       (entries) => {
         for (const entry of entries) {
           if (!entry.isIntersecting) continue;
+          if (Date.now() < suppressObserverUntil) continue;
           const index = indexOfElement.get(entry.target);
           if (index !== undefined) dispatch({ type: "activeIndex/set", index });
         }
@@ -261,6 +273,30 @@ export function useArticleFeed(
     return callback;
   }
 
+  function activeArticle(): Article | null {
+    return state.value.articles[state.value.activeIndex] ?? null;
+  }
+
+  /**
+   * Moves DOM focus as well as the index. Without the focus move, j/k give a
+   * screen-reader user no feedback at all — the page scrolls and nothing is
+   * announced.
+   */
+  function step(delta: 1 | -1): void {
+    if (state.value.articles.length === 0) return;
+    dispatch({ type: "activeIndex/step", delta });
+
+    const element = elementOfIndex.get(state.value.activeIndex);
+    if (!element) return;
+
+    const focusable = element.querySelector<HTMLElement>("button, a[href]") ?? null;
+    focusable?.focus({ preventScroll: true });
+
+    const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+    element.scrollIntoView({ block: "center", behavior: reduceMotion ? "auto" : "smooth" });
+    suppressObserverUntil = Date.now() + 600;
+  }
+
   return {
     articles: computed(() => state.value.articles),
     status: computed(() => state.value.status),
@@ -269,6 +305,8 @@ export function useArticleFeed(
     activeIndex: computed(() => state.value.activeIndex),
     retry,
     loadMore,
+    step,
+    activeArticle,
     registerCard,
   };
 }

@@ -65,6 +65,16 @@ function clear(): void {
   suggestions.value = [];
   emit("update:modelValue", "");
 }
+
+const input = ref<HTMLInputElement | null>(null);
+
+// Exposed for the "/" shortcut.
+defineExpose({
+  focus: () => {
+    input.value?.focus();
+    input.value?.select();
+  },
+});
 </script>
 
 <template>
@@ -74,6 +84,7 @@ function clear(): void {
     <label class="min-w-0 flex-1">
       <span class="sr-only">Search Wikipedia</span>
       <input
+        ref="input"
         v-model="draft"
         type="search"
         :list="listId"
