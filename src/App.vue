@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onErrorCaptured, ref } from "vue";
 import ArticleCard from "./components/ArticleCard/ArticleCard.vue";
+import ArticleReader from "./components/ArticleReader/ArticleReader.vue";
 import Button from "./components/Button/Button.vue";
 import { Modal } from "./components/Modal/Modal";
 import Notice from "./components/Notice/Notice.vue";
@@ -46,7 +47,6 @@ const { count: seenCount, clear: clearSeen } = useSeenArticles();
 const view = ref<"feed" | "saved">("feed");
 
 const selectedArticle = ref<Article | null>(null);
-const iframeLoaded = ref(false);
 
 // Vue's equivalent of an error boundary. Without it, a render error anywhere
 // below unmounts the whole app and leaves a blank page with a console trace.
@@ -57,8 +57,26 @@ onErrorCaptured((caught) => {
 });
 
 function openArticle(article: Article): void {
-  iframeLoaded.value = false;
   selectedArticle.value = article;
+}
+
+/*
+  A link followed from inside the reader. The target is usually not in the feed,
+  so only the title is known — enough for the reader, which fetches its own
+  content, and enough for the footer links.
+*/
+function openByTitle(title: string): void {
+  const known = articles.value.find((candidate) => candidate.title === title);
+  selectedArticle.value = known ?? {
+    id: -1,
+    title,
+    extract: "",
+    thumbnailUrl: null,
+    pageUrl: `https://en.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g, "_"))}`,
+    createdAt: null,
+    lastEdited: null,
+    viewCount30d: null,
+  };
 }
 
 function reload(): void {
@@ -222,14 +240,13 @@ function reload(): void {
         <Modal.Header>
           <Modal.Title>{{ selectedArticle.title }}</Modal.Title>
         </Modal.Header>
-        <Modal.Body class="relative overflow-hidden p-0">
-          <Skeleton v-if="!iframeLoaded" shape="rect" class="absolute inset-0 rounded-none" />
-          <iframe
+        <Modal.Body scrollable>
+          <ArticleReader
             :key="selectedArticle.id"
-            :src="selectedArticle.pageUrl"
             :title="selectedArticle.title"
-            class="absolute top-0 left-0 h-1/2 w-1/2 origin-top-left scale-[2]"
-            @load="iframeLoaded = true"
+            :page-url="selectedArticle.pageUrl"
+            :preview="selectedArticle.extract"
+            @navigate="openByTitle"
           />
         </Modal.Body>
         <Modal.Footer>

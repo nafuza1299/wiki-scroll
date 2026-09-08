@@ -72,8 +72,30 @@ one request rather than ten. Not implemented because `exlimit` interacts with
 breaks the feed rather than degrading it. Confirm with one request, then the
 change is confined to the loaders in `feedSource.ts` and a new URL builder.
 
-Article text is CC BY-SA 4.0. Rendering it outside Wikipedia's own chrome would
-mean this app carries the attribution itself.
+## The reader
+
+Opening a card fetches `mobile-html`, sanitises it, and renders it inline with
+the app's own tokens — no iframe. An iframe would break the modal's focus trap:
+once focus enters a frame the parent's Tab handler stops seeing it, and the user
+tabs through hundreds of article links and straight out of the dialog.
+
+That means third-party HTML goes into this origin's DOM, which is the largest
+attack surface in the app. Three things carry the safety, and none of them is
+optional:
+
+1. **`src/lib/sanitizeArticleHtml.ts` is allowlist-based**, parses through
+   `DOMParser` (an inert document — nothing executes or loads), drops every
+   `on*` handler and every inline `style`, and resolves every URL to check for an
+   http(s) protocol, which rules out `javascript:` and `data:` in one place.
+2. **31 tests** cover it, including the payloads a sanitiser is supposed to stop.
+3. **A CSP in `index.html`**, so a bug in (1) still cannot load or execute
+   anything. `script-src` deliberately has no `'unsafe-inline'` — that is exactly
+   what would let a missed inline handler run. The pre-paint theme script is
+   allowed by SHA-256 hash instead, and `src/test/csp.test.ts` recomputes that
+   hash from the file so reformatting cannot silently break it.
+
+Article text is CC BY-SA 4.0. Rendering it outside Wikipedia's own chrome moves
+the attribution obligation onto this app, which the reader footer discharges.
 
 ## Design system
 

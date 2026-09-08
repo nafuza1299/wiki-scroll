@@ -4,6 +4,35 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Wiki Scroll</title>
+    <!--
+      Defence in depth behind src/lib/sanitizeArticleHtml.ts. That sanitiser is
+      allowlist-based and well covered, but it renders HTML from a wiki anyone can
+      edit inside this origin — so this policy is what makes a bug in it unable to
+      load or execute anything.
+
+      script-src does NOT carry 'unsafe-inline': that is exactly what would let a
+      missed inline handler or javascript: URL run. The theme script below is
+      allowed by its hash instead, and src/test/csp.test.ts recomputes that hash
+      from the file so the two cannot drift apart silently.
+
+      connect-src includes ws: for Vite's dev HMR socket; style-src needs
+      'unsafe-inline' because Vue injects component styles as inline <style>.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="
+        default-src 'self';
+        script-src 'self' 'sha256-4sJAKCXI1YpV1JZAfaLNZxQNXKKTC62ekGyPt7edOV4=';
+        style-src 'self' 'unsafe-inline';
+        img-src 'self' data: https://upload.wikimedia.org https://*.wikimedia.org https://*.wikipedia.org;
+        connect-src 'self' https://en.wikipedia.org https://wikimedia.org ws: wss:;
+        font-src 'self';
+        frame-src 'none';
+        object-src 'none';
+        base-uri 'none';
+        form-action 'none'
+      "
+    />
     <script>
       /*
         Blocking on purpose. This resolves the theme and writes [data-theme]
