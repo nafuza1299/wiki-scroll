@@ -82,7 +82,7 @@ describe("loadRandomPage", () => {
     const page = await loadRandomPage({
       size: 3,
       signal: new AbortController().signal,
-      exclude: new Set([1]),
+      exclude: (id) => id === 1,
     });
 
     expect(page.articles.map((a) => a.id)).not.toContain(1);

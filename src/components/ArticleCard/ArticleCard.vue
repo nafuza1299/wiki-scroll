@@ -1,15 +1,17 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import Button from "../Button/Button.vue";
 import { formatDate, formatViews } from "../../lib/format";
 import type { Article } from "../../lib/wikipedia/article";
 
 export interface ArticleCardProps {
   article: Article;
   index: number;
+  saved?: boolean;
 }
 
-const props = defineProps<ArticleCardProps>();
-defineEmits<{ open: [] }>();
+const props = withDefaults(defineProps<ArticleCardProps>(), { saved: false });
+defineEmits<{ open: []; "toggle-save": [] }>();
 
 // Both can be null: the API may omit a timestamp, and it may be unparseable.
 // A field that cannot be formatted is omitted rather than shown as nonsense.
@@ -47,15 +49,39 @@ const views = computed(() => formatViews(props.article.viewCount30d));
       <span v-else class="text-4xl font-bold text-text-muted">W</span>
     </div>
     <div class="flex flex-col gap-1 p-3">
-      <h2 class="text-base font-bold">
-        <button
-          type="button"
-          class="text-left after:absolute after:inset-0 after:content-[''] hover:underline focus-visible:outline-none"
-          @click="$emit('open')"
+      <div class="flex items-start justify-between gap-2">
+        <h2 class="text-base font-bold">
+          <button
+            type="button"
+            class="text-left after:absolute after:inset-0 after:content-[''] hover:underline focus-visible:outline-none"
+            @click="$emit('open')"
+          >
+            {{ article.title }}
+          </button>
+        </h2>
+        <!-- Above the stretched pseudo-element, or the card would swallow it. -->
+        <Button
+          class="relative z-10 shrink-0"
+          variant="ghost"
+          size="sm"
+          icon-only
+          :aria-pressed="saved"
+          :aria-label="saved ? `Remove ${article.title} from saved` : `Save ${article.title}`"
+          @click="$emit('toggle-save')"
         >
-          {{ article.title }}
-        </button>
-      </h2>
+          <svg
+            viewBox="0 0 24 24"
+            :fill="saved ? 'currentColor' : 'none'"
+            stroke="currentColor"
+            stroke-width="2"
+            class="h-4 w-4"
+            :class="saved ? 'text-primary' : ''"
+            aria-hidden="true"
+          >
+            <path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z" stroke-linejoin="round" />
+          </svg>
+        </Button>
+      </div>
       <p class="line-clamp-2 text-sm text-text-muted">{{ article.extract }}</p>
       <div class="flex flex-wrap gap-3 text-xs text-text-muted">
         <span>{{ views }}</span>

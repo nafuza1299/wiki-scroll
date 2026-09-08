@@ -18,6 +18,7 @@ import {
   type FeedMode,
   type FeedState,
 } from "./feedReducer";
+import { useSeenArticles } from "./useSeenArticles";
 
 const BATCH_SIZE = 10;
 const ENRICH_CONCURRENCY = 4;
@@ -28,6 +29,15 @@ const ENRICH_CONCURRENCY = 4;
  * bottom and then waited.
  */
 const PREFETCH_AHEAD = 3;
+
+/**
+ * Injected rather than imported so the feed does not reach into persistence
+ * directly — and so its tests are not at the mercy of a real storage backend.
+ */
+export interface SeenTracker {
+  has: (id: number) => boolean;
+  remember: (ids: readonly number[]) => void;
+}
 
 export interface ArticleFeed {
   articles: ComputedRef<Article[]>;
@@ -51,7 +61,12 @@ function resolveElement(target: unknown): Element | null {
   return element instanceof Element ? element : null;
 }
 
-export function useArticleFeed(mode: Ref<FeedMode>): ArticleFeed {
+export function useArticleFeed(
+  mode: Ref<FeedMode>,
+  options: { seen?: SeenTracker } = {},
+): ArticleFeed {
+  const seen = options.seen ?? useSeenArticles();
+
   // shallowRef plus whole-state replacement: the reducer already returns new
   // objects, so deep reactivity would proxy every Article for nothing.
   const state = shallowRef<FeedState>(initialFeedState(mode.value));
@@ -77,6 +92,12 @@ export function useArticleFeed(mode: Ref<FeedMode>): ArticleFeed {
     });
   }
 
+  /** Everything already on screen, plus everything read recently. */
+  function excluded(): (id: number) => boolean {
+    const onScreen = new Set(state.value.articles.map((article) => article.id));
+    return (id) => onScreen.has(id) || seen.has(id);
+  }
+
   async function load(initial: boolean): Promise<void> {
     if (!controller || controller.signal.aborted) controller = new AbortController();
     const { signal } = controller;
@@ -88,9 +109,12 @@ export function useArticleFeed(mode: Ref<FeedMode>): ArticleFeed {
       const page = await loadRandomPage({
         size: BATCH_SIZE,
         signal,
-        exclude: new Set(state.value.articles.map((article) => article.id)),
+        exclude: excluded(),
       });
       if (signal.aborted) return;
+      // Marked on arrival rather than on scroll-past: that is what makes a
+      // refresh continue where it left off instead of re-serving the same page.
+      seen.remember(page.articles.map((article) => article.id));
       dispatch({ type: "page/success", generation, initial, articles: page.articles });
       enrich(page.articles, signal, generation);
     } catch (error) {

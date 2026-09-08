@@ -50,8 +50,11 @@ async function fetchRandomSummary(signal: AbortSignal): Promise<Article | null> 
 export async function loadRandomPage(options: {
   size: number;
   signal: AbortSignal;
-  /** Ids already in the feed, so a page never repeats what is on screen. */
-  exclude?: ReadonlySet<number>;
+  /**
+   * Rejects ids the caller already has. A predicate rather than a Set so the
+   * caller can combine sources — what is on screen, and what was read earlier.
+   */
+  exclude?: (id: number) => boolean;
 }): Promise<FeedPageResult> {
   const { size, signal, exclude } = options;
   const requested = Math.ceil(size * OVERFETCH);
@@ -77,7 +80,7 @@ export async function loadRandomPage(options: {
       discarded += 1;
       continue;
     }
-    if (seenInPage.has(article.id) || exclude?.has(article.id)) {
+    if (seenInPage.has(article.id) || exclude?.(article.id)) {
       discarded += 1;
       continue;
     }

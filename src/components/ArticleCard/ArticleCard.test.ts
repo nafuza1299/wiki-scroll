@@ -111,6 +111,26 @@ describe("ArticleCard", () => {
     expect(screen.queryByText(/^Edited /)).not.toBeInTheDocument();
   });
 
+  it("exposes the save control as a toggle", async () => {
+    const { emitted } = renderCard();
+
+    const save = screen.getByRole("button", { name: "Save Marie Curie" });
+    expect(save).toHaveAttribute("aria-pressed", "false");
+
+    await userEvent.click(save);
+
+    expect(emitted()["toggle-save"]).toHaveLength(1);
+    // The card itself must not open just because the bookmark was pressed.
+    expect(emitted().open).toBeUndefined();
+  });
+
+  it("labels the save control by what it will do when already saved", () => {
+    render(ArticleCard, { props: { article, index: 0, saved: true } });
+
+    const save = screen.getByRole("button", { name: "Remove Marie Curie from saved" });
+    expect(save).toHaveAttribute("aria-pressed", "true");
+  });
+
   it("falls back to a placeholder when there is no thumbnail", () => {
     renderCard({ thumbnailUrl: null });
 

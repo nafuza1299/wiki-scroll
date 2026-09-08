@@ -8,10 +8,16 @@ import Skeleton from "./components/Skeleton/Skeleton.vue";
 import ThemeToggle from "./components/ThemeToggle/ThemeToggle.vue";
 import type { FeedMode } from "./composables/feedReducer";
 import { useArticleFeed } from "./composables/useArticleFeed";
+import { useSavedArticles } from "./composables/useSavedArticles";
+import { useSeenArticles } from "./composables/useSeenArticles";
 import type { Article } from "./lib/wikipedia/article";
 
 const mode = ref<FeedMode>({ kind: "random" });
 const { articles, status, more, error, retry, registerCard } = useArticleFeed(mode);
+const { saved, count: savedCount, isSaved, toggle, clear: clearSaved } = useSavedArticles();
+const { count: seenCount, clear: clearSeen } = useSeenArticles();
+
+const view = ref<"feed" | "saved">("feed");
 
 const selectedArticle = ref<Article | null>(null);
 const iframeLoaded = ref(false);
@@ -37,9 +43,19 @@ function reload(): void {
 <template>
   <div class="h-screen w-screen overflow-y-auto">
     <div class="mx-auto flex max-w-xl flex-col gap-3 p-4">
-      <header class="flex items-center justify-between">
+      <header class="flex items-center justify-between gap-2">
         <h1 class="text-lg font-bold">Wiki Scroll</h1>
-        <ThemeToggle />
+        <div class="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            :aria-pressed="view === 'saved'"
+            @click="view = view === 'saved' ? 'feed' : 'saved'"
+          >
+            Saved{{ savedCount ? ` (${savedCount})` : "" }}
+          </Button>
+          <ThemeToggle />
+        </div>
       </header>
 
       <Notice
@@ -50,6 +66,37 @@ function reload(): void {
       >
         <Button @click="reload">Reload</Button>
       </Notice>
+
+      <main v-else-if="view === 'saved'" class="flex flex-col gap-3">
+        <Notice
+          v-if="saved.length === 0"
+          title="Nothing saved yet"
+          message="Tap the bookmark on a card to keep it here."
+        />
+        <ArticleCard
+          v-for="(article, index) in saved"
+          :key="article.id"
+          :article="article"
+          :index="index"
+          saved
+          @open="openArticle(article)"
+          @toggle-save="toggle(article)"
+        />
+        <div v-if="saved.length" class="flex justify-end pt-2">
+          <Button variant="ghost" size="sm" @click="clearSaved">Clear saved</Button>
+        </div>
+        <!--
+          Reading history is a recency filter with a cap, not a permanent
+          memory, so it is surfaced and clearable rather than silently promised.
+        -->
+        <div
+          v-if="seenCount"
+          class="flex items-center justify-between pt-2 text-xs text-text-muted"
+        >
+          <span>{{ seenCount }} recently read, hidden from the feed</span>
+          <Button variant="ghost" size="sm" @click="clearSeen">Clear history</Button>
+        </div>
+      </main>
 
       <main v-else>
         <!-- First load. One labelled skeleton per region, not per placeholder. -->
@@ -87,7 +134,9 @@ function reload(): void {
             :ref="registerCard(index)"
             :article="article"
             :index="index"
+            :saved="isSaved(article.id)"
             @open="openArticle(article)"
+            @toggle-save="toggle(article)"
           />
 
           <!-- Loading more was previously announced to nobody. -->

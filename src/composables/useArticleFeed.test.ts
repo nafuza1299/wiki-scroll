@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { defineComponent, h, ref } from "vue";
 import { render } from "@testing-library/vue";
-import { useArticleFeed, type ArticleFeed } from "./useArticleFeed";
+import { useArticleFeed, type ArticleFeed, type SeenTracker } from "./useArticleFeed";
 import type { FeedMode } from "./feedReducer";
 import { clearHttpCaches } from "../lib/http";
 import { errorResponse, jsonResponse, mockRoute } from "../test/fetchMock";
@@ -45,12 +45,25 @@ function failEverything(): void {
   mockRoute("prop=revisions", () => errorResponse(503));
 }
 
+/*
+  A fresh in-memory seen-set per mount. The real one is a persisted app-wide
+  singleton, so without injecting here each test would inherit the ids the
+  previous test read and the feed would legitimately run out of articles.
+*/
+function makeSeen(initial: readonly number[] = []): SeenTracker {
+  const ids = new Set(initial);
+  return {
+    has: (id) => ids.has(id),
+    remember: (incoming) => incoming.forEach((id) => ids.add(id)),
+  };
+}
+
 /** Mounts the composable in a real component, so lifecycle hooks actually run. */
-function mountFeed(mode = ref<FeedMode>({ kind: "random" })) {
+function mountFeed(mode = ref<FeedMode>({ kind: "random" }), seen: SeenTracker = makeSeen()) {
   let feed!: ArticleFeed;
   const Harness = defineComponent({
     setup() {
-      feed = useArticleFeed(mode);
+      feed = useArticleFeed(mode, { seen });
       return () =>
         h(
           "div",
@@ -190,6 +203,34 @@ describe("useArticleFeed", () => {
       expect(feed().status.value).toBe("ready");
       expect(feed().articles.value.map((article) => article.id)).not.toEqual(first);
     }, waitOptions);
+  });
+
+  /*
+    The recency filter. Articles read in an earlier session are excluded, which
+    is what makes a refresh continue rather than re-serve the same page.
+  */
+  it("skips articles that have already been seen", async () => {
+    serveArticles();
+    const { feed } = mountFeed(ref<FeedMode>({ kind: "random" }), makeSeen([1, 2, 3]));
+
+    await vi.waitFor(() => expect(feed().status.value).toBe("ready"), waitOptions);
+
+    const ids = feed().articles.value.map((article) => article.id);
+    expect(ids).not.toContain(1);
+    expect(ids).not.toContain(2);
+    expect(ids).not.toContain(3);
+  });
+
+  it("remembers a page so the next one does not repeat it", async () => {
+    serveArticles();
+    const seen = makeSeen();
+    const { feed } = mountFeed(ref<FeedMode>({ kind: "random" }), seen);
+
+    await vi.waitFor(() => expect(feed().status.value).toBe("ready"), waitOptions);
+
+    for (const article of feed().articles.value) {
+      expect(seen.has(article.id)).toBe(true);
+    }
   });
 
   it("enriches cards with view counts after the page has rendered", async () => {
