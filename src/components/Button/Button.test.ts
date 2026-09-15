@@ -31,6 +31,13 @@ describe("Button", () => {
     expect(emitted().click).toBeUndefined();
   });
 
+  it("stops the spinner under prefers-reduced-motion", () => {
+    render(Button, { props: { loading: true }, slots: slot("Save") });
+
+    const spinner = screen.getByRole("button").querySelector("[aria-hidden='true']");
+    expect(spinner).toHaveClass("motion-reduce:animate-none");
+  });
+
   it("does not emit click while disabled", async () => {
     const { emitted } = render(Button, { props: { disabled: true }, slots: slot("Save") });
 

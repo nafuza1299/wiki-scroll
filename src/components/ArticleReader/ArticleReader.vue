@@ -124,7 +124,7 @@ function onClick(event: MouseEvent): void {
 
     <p v-if="!loading && !failed" class="mt-6 border-t border-border pt-3 text-xs text-text-muted">
       From
-      <a :href="pageUrl" target="_blank" rel="noreferrer" class="text-primary hover:underline">
+      <a :href="pageUrl" target="_blank" rel="noreferrer" class="text-link hover:underline">
         Wikipedia
       </a>
       —
@@ -132,12 +132,12 @@ function onClick(event: MouseEvent): void {
         href="https://creativecommons.org/licenses/by-sa/4.0/"
         target="_blank"
         rel="noreferrer"
-        class="text-primary hover:underline"
+        class="text-link hover:underline"
       >
         CC BY-SA 4.0
       </a>
       ·
-      <a :href="historyUrl" target="_blank" rel="noreferrer" class="text-primary hover:underline">
+      <a :href="historyUrl" target="_blank" rel="noreferrer" class="text-link hover:underline">
         Authors
       </a>
     </p>

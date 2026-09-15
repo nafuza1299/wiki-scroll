@@ -116,7 +116,7 @@ const views = computed(() => formatViews(props.article.viewCount30d));
           :href="article.pageUrl"
           target="_blank"
           rel="noreferrer"
-          class="relative z-10 text-primary hover:underline"
+          class="relative z-10 text-link hover:underline"
         >
           Wikipedia ↗
         </a>

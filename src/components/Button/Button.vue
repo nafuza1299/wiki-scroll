@@ -70,7 +70,7 @@ const classes = computed(() => [
     <span
       v-if="loading"
       aria-hidden="true"
-      class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"
+      class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent motion-reduce:animate-none"
     />
     <slot />
   </button>

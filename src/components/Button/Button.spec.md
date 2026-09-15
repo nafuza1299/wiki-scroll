@@ -26,6 +26,8 @@ Attributes not listed here (`aria-label`, `title`, `form`, …) fall through to 
 
 - `type="button"` by default, so a button inside a form does not submit it by accident.
 - `loading` sets `aria-busy` and the `disabled` attribute — a loading button cannot be double-fired.
+- The spinner is decorative (`aria-hidden`) and stops spinning under
+  `prefers-reduced-motion` — `aria-busy` is what actually communicates the state.
 - Focus is always visible: `focus-visible:ring-2` with an offset against the page background.
 - `min-h-11` (44px) holds the mobile touch-target floor even at `sm`, where the
   padding and font are visually smaller. That floor relaxes to the visual size at
