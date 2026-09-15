@@ -2,6 +2,18 @@
 
 An infinite feed of random English Wikipedia articles. Scroll, read, save.
 
+![Scrolling the feed and opening an article in the in-app reader](docs/screenshots/demo.gif)
+
+<table>
+<tr>
+<td><img src="docs/screenshots/feed-light.png" alt="The feed in light mode" width="380"></td>
+<td><img src="docs/screenshots/feed-dark.png" alt="The feed in dark mode" width="380"></td>
+</tr>
+</table>
+
+**[Live demo](https://nafuza1299.github.io/wiki-scroll/)** — deployed straight
+from `main` by `.github/workflows/deploy.yml`.
+
 **Stack:** Vite 6 + Vue 3.5 + TypeScript 5.7 (strict), Tailwind v4 (`@theme`, no
 config file), Vitest + Testing Library. Runtime dependencies: `vue`. That is the
 whole list, and it is deliberate.
@@ -10,16 +22,34 @@ whole list, and it is deliberate.
 
 ```bash
 npm install
-npm run dev           # dev server on :5173
-npm test              # vitest
-npm run test:watch    # the inner loop
-npm run typecheck     # vue-tsc, includes test files
-npm run lint          # eslint
-npm run format        # prettier --write
-npm run build         # typecheck + production build -> dist/
+npm run dev            # dev server on :5173
+npm test               # vitest
+npm run test:watch     # the inner loop
+npm run test:coverage  # vitest --coverage
+npm run test:e2e       # playwright, against a real browser — see "Testing" below
+npm run typecheck      # vue-tsc, includes test files
+npm run lint           # eslint
+npm run format         # prettier --write
+npm run build          # typecheck + production build -> dist/
 ```
 
 Node 22 (`.nvmrc`); CI reads the same file.
+
+## Testing
+
+Two suites, deliberately different in kind rather than overlapping:
+
+- **Vitest** (`src/**/*.test.ts`) — components, composables, and the
+  Wikimedia API boundary, in jsdom. jsdom has no `IntersectionObserver`, so
+  `src/test/observerMock.ts` drives it by hand: fast and precise for the logic,
+  but it never proves the real mechanism fires.
+- **Playwright** (`e2e/*.spec.ts`) — the two things jsdom structurally cannot
+  cover: that scrolling a real card into view in a real browser actually loads
+  the next page (`e2e/scroll.spec.ts`), and an `axe-core` scan of the live DOM,
+  including the reader with its injected third-party HTML open
+  (`e2e/a11y.spec.ts`). The Wikimedia API is mocked at the network layer
+  (`e2e/mockWikipedia.ts`) — deterministic and offline, not a live-API
+  smoke test.
 
 ## Where things live
 

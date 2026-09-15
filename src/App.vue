@@ -295,7 +295,7 @@ function reload(): void {
             class="flex justify-center py-4"
           >
             <div
-              class="h-6 w-6 animate-spin rounded-full border-2 border-border border-t-primary"
+              class="h-6 w-6 animate-spin rounded-full border-2 border-border border-t-primary motion-reduce:animate-none"
             />
           </div>
 
@@ -361,7 +361,7 @@ function reload(): void {
             :href="openArticleData.pageUrl"
             target="_blank"
             rel="noreferrer"
-            class="mr-auto text-sm text-primary hover:underline"
+            class="mr-auto text-sm text-link hover:underline"
           >
             Open in Wikipedia ↗
           </a>

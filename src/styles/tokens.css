@@ -29,10 +29,40 @@
   --color-surface-hover: #f4f4f5;
   --color-border: #e4e4e7;
   --color-text: #0a0a0a;
-  --color-text-muted: #71717a;
+  /*
+    zinc-600, not zinc-500 (#71717a). zinc-500 measures ~4.6:1 against
+    --color-surface on paper, but axe-core's actual rendered-pixel sample at
+    12px (src/components/ArticleReader footer, ArticleCard metadata row) came
+    back at 4.41:1 — under the 4.5:1 AA floor — because anti-aliasing softens
+    the effective foreground color at small sizes. zinc-600 clears 7:1+
+    against every background this token is used on, with real margin instead
+    of a borderline pass.
+  */
+  --color-text-muted: #52525b;
   --color-primary: #2563eb;
   --color-primary-hover: #1d4ed8;
   --color-primary-fg: #ffffff;
+  /*
+    Deliberately its own token, not a reuse of --color-primary. --color-primary
+    also has to work as a *filled button background* under white text
+    (--color-primary-fg), which in dark mode pulls it toward a bright, saturated
+    blue. Text sitting directly on the page needs the opposite: dark mode's
+    near-black backgrounds need a *light* blue to clear 4.5:1. No single blue
+    satisfies both — proof: white-on-primary needs L <= 0.183, primary-as-text
+    needs L >= 0.198 in dark mode, an empty range — so a shared token was
+    quietly failing one role or the other. --color-link is the text/link role;
+    --color-primary stays reserved for filled controls.
+  */
+  /*
+    One shade darker than --color-primary (blue-700, not blue-600). The two
+    read as identical hues, but --color-primary's nominal ~5:1 against
+    --color-surface has no margin left once axe measures actual rendered
+    pixels instead of the flat CSS values — small text's anti-aliased edges
+    measure a softer, lower-contrast color than the solid one, and 4.95:1 on
+    paper came back 4.29:1 in practice. Blue-700 keeps a real margin.
+  */
+  --color-link: #1d4ed8;
+  --color-link-hover: #1e40af;
   --color-danger: #dc2626;
   --color-danger-fg: #ffffff;
 
@@ -65,6 +95,9 @@
   --color-primary: #3b82f6;
   --color-primary-hover: #60a5fa;
   --color-primary-fg: #ffffff;
+  /* Lighter than --color-primary on purpose — see the :root comment. */
+  --color-link: #60a5fa;
+  --color-link-hover: #93c5fd;
   --color-danger: #ef4444;
   --color-danger-fg: #ffffff;
 
@@ -95,6 +128,8 @@
   --color-primary: var(--color-primary);
   --color-primary-hover: var(--color-primary-hover);
   --color-primary-fg: var(--color-primary-fg);
+  --color-link: var(--color-link);
+  --color-link-hover: var(--color-link-hover);
   --color-danger: var(--color-danger);
   --color-danger-fg: var(--color-danger-fg);
   --color-tag-blue-bg: var(--color-tag-blue-bg);
