@@ -5,10 +5,13 @@ import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig(({ command }) => ({
   // GitHub Pages serves this as a project site, under /wiki-scroll/, not the
-  // domain root — but only for the production build. Dev and test both run
-  // under Vite's own "serve" command and stay at "/" so `npm run dev` and
-  // Vitest are unaffected.
-  base: command === "build" ? "/wiki-scroll/" : "/",
+  // domain root — but every OTHER production build (Vercel, `npm run build`
+  // locally, CI's own build check) is served from "/". Gating on
+  // command === "build" alone broke exactly that: Vercel's build got the
+  // /wiki-scroll/ prefix too, so its index.html asked for assets that don't
+  // exist at its domain root and the app never mounted — a white page. Only
+  // .github/workflows/deploy.yml sets GITHUB_PAGES, so this only fires there.
+  base: command === "build" && process.env.GITHUB_PAGES === "true" ? "/wiki-scroll/" : "/",
   plugins: [vue(), tailwindcss()],
   test: {
     environment: "jsdom",
