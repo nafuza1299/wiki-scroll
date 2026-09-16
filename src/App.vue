@@ -33,9 +33,12 @@ const { route, navigate, canGoBack, back } = useAppRoute();
 const view = computed(() => route.value.view);
 const query = computed(() => route.value.query);
 
+const lang = computed(() => route.value.lang);
+
 const mode = computed<FeedMode>(() => {
   if (route.value.related) return { kind: "related", title: route.value.related };
-  if (route.value.query) return { kind: "search", query: route.value.query };
+  if (route.value.query)
+    return { kind: "search", query: route.value.query, sort: route.value.sort };
   return { kind: "random" };
 });
 
@@ -55,8 +58,10 @@ function toggleView(): void {
   navigate({ ...route.value, view: view.value === "saved" ? "feed" : "saved", article: null });
 }
 
-const { articles, status, more, error, retry, step, activeArticle, registerCard } =
-  useArticleFeed(mode);
+const { articles, status, more, error, retry, step, activeArticle, registerCard } = useArticleFeed(
+  mode,
+  lang,
+);
 const { saved, count: savedCount, isSaved, toggle, clear: clearSaved } = useSavedArticles();
 const { count: seenCount, clear: clearSeen } = useSeenArticles();
 
@@ -85,10 +90,11 @@ const openArticleData = computed<Article | null>(() => {
   return (
     known ?? {
       id: -1,
+      lang: route.value.lang,
       title,
       extract: "",
       thumbnailUrl: null,
-      pageUrl: `https://en.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g, "_"))}`,
+      pageUrl: `https://${route.value.lang}.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g, "_"))}`,
       createdAt: null,
       lastEdited: null,
       viewCount30d: null,
@@ -115,7 +121,7 @@ async function share(article: Article): Promise<void> {
   // The app's own link, not Wikipedia's — sharing the reader is the point.
   const result = await shareArticle({
     title: article.title,
-    url: articleShareUrl(article.title),
+    url: articleShareUrl(article.title, article.lang),
   });
   if (result === "copied") shareNotice.value = "Link copied";
   else if (result === "failed") shareNotice.value = "Couldn't share that link";
@@ -222,7 +228,7 @@ function reload(): void {
       </main>
 
       <main v-else class="flex flex-col gap-3">
-        <SearchBar ref="searchBar" :model-value="query" @update:model-value="search" />
+        <SearchBar ref="searchBar" :model-value="query" :lang="lang" @update:model-value="search" />
 
         <!-- Says what the feed is currently showing, and how to leave it. -->
         <div
@@ -231,7 +237,11 @@ function reload(): void {
         >
           <span class="min-w-0 truncate">
             {{
-              mode.kind === "search" ? `Results for “${mode.query}”` : `Similar to ${mode.title}`
+              mode.kind === "search"
+                ? `Results for “${mode.query}”`
+                : mode.kind === "category"
+                  ? `Category: ${mode.name}`
+                  : `Similar to ${mode.title}`
             }}
           </span>
           <Button variant="ghost" size="sm" class="shrink-0" @click="backToRandom">
@@ -280,7 +290,7 @@ function reload(): void {
             :ref="registerCard(index)"
             :article="article"
             :index="index"
-            :saved="isSaved(article.id)"
+            :saved="isSaved(article.lang, article.id)"
             @open="openArticle(article)"
             @toggle-save="toggle(article)"
             @share="share(article)"
@@ -353,6 +363,7 @@ function reload(): void {
             :title="openArticleData.title"
             :page-url="openArticleData.pageUrl"
             :preview="openArticleData.extract"
+            :lang="openArticleData.lang"
             @navigate="openByTitle"
           />
         </Modal.Body>

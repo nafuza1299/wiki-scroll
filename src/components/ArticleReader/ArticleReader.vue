@@ -13,9 +13,13 @@ export interface ArticleReaderProps {
   pageUrl: string;
   /** Shown immediately, so the panel is never blank while the article loads. */
   preview?: string;
+  /** Which wiki to fetch the article body from. Defaults to English so every
+   *  existing caller (and test) that predates the language switcher keeps
+   *  working unchanged. */
+  lang?: string;
 }
 
-const props = withDefaults(defineProps<ArticleReaderProps>(), { preview: "" });
+const props = withDefaults(defineProps<ArticleReaderProps>(), { preview: "", lang: "en" });
 const emit = defineEmits<{ navigate: [title: string] }>();
 
 const html = ref<string | null>(null);
@@ -35,7 +39,7 @@ async function load(): Promise<void> {
   loading.value = true;
 
   try {
-    const raw = await fetchArticleHtml(props.title, signal);
+    const raw = await fetchArticleHtml(props.lang, props.title, signal);
     if (signal.aborted) return;
     html.value = sanitizeArticleHtml(raw, { baseUrl: props.pageUrl });
   } catch (error) {
@@ -47,8 +51,11 @@ async function load(): Promise<void> {
 }
 
 // Fetch only when a reader is actually open, and never ahead of time: these
-// documents run from 100 KB to about a megabyte.
-watch(() => props.title, load, { immediate: true });
+// documents run from 100 KB to about a megabyte. Watches lang too, not just
+// title: the modal's :key is the title alone, so switching language while a
+// reader is open would otherwise leave the old language's content on screen
+// with nothing to trigger a refetch.
+watch([() => props.title, () => props.lang], load, { immediate: true });
 
 onScopeDispose(() => controller?.abort());
 

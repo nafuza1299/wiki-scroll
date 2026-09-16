@@ -40,10 +40,13 @@ const PREFETCH_AHEAD = 3;
 /**
  * Injected rather than imported so the feed does not reach into persistence
  * directly — and so its tests are not at the mercy of a real storage backend.
+ *
+ * Keyed on (lang, id) pairs, not bare ids: a pageid is only unique per-wiki,
+ * so a bare-id tracker would silently misreport across a language switch.
  */
 export interface SeenTracker {
-  has: (id: number) => boolean;
-  remember: (ids: readonly number[]) => void;
+  has: (lang: string, id: number) => boolean;
+  remember: (articles: readonly { lang: string; id: number }[]) => void;
 }
 
 export interface ArticleFeed {
@@ -74,13 +77,14 @@ function resolveElement(target: unknown): Element | null {
 
 export function useArticleFeed(
   mode: Ref<FeedMode>,
+  lang: Ref<string>,
   options: { seen?: SeenTracker } = {},
 ): ArticleFeed {
   const seen = options.seen ?? useSeenArticles();
 
   // shallowRef plus whole-state replacement: the reducer already returns new
   // objects, so deep reactivity would proxy every Article for nothing.
-  const state = shallowRef<FeedState>(initialFeedState(mode.value));
+  const state = shallowRef<FeedState>(initialFeedState(mode.value, lang.value));
 
   function dispatch(action: FeedAction): void {
     state.value = feedReducer(state.value, action);
@@ -102,7 +106,10 @@ export function useArticleFeed(
 
   function enrich(page: readonly Article[], signal: AbortSignal, generation: number): void {
     void forEachLimit(page, ENRICH_CONCURRENCY, async (article) => {
-      const patch = await enrichArticle(article.title, signal);
+      // The article's own lang, not the outer ref: correct even if the user
+      // switches language again mid-enrichment, and the generation guard below
+      // already handles that race at the dispatch level regardless.
+      const patch = await enrichArticle(article.lang, article.title, signal);
       if (signal.aborted || state.value.generation !== generation) return;
       dispatch({ type: "article/enrich", id: article.id, patch });
     }).catch(() => {
@@ -110,10 +117,18 @@ export function useArticleFeed(
     });
   }
 
-  /** Everything already on screen, plus everything read recently. */
+  /**
+   * Everything already on screen, plus everything read recently.
+   *
+   * The on-screen half stays id-only on purpose: at any moment `articles` only
+   * ever holds one language's cards, because a language change always resets
+   * the feed (see the watch below) — so a same-numbered article from another
+   * wiki is never actually on screen to collide with. Only the persisted seen
+   * history spans languages, which is why that half needs the composite key.
+   */
   function excluded(): (id: number) => boolean {
     const onScreen = new Set(state.value.articles.map((article) => article.id));
-    return (id) => onScreen.has(id) || seen.has(id);
+    return (id) => onScreen.has(id) || seen.has(lang.value, id);
   }
 
   /**
@@ -134,6 +149,7 @@ export function useArticleFeed(
     switch (current.kind) {
       case "search":
         return loadSearchPage({
+          lang: lang.value,
           query: current.query,
           size: BATCH_SIZE,
           offset: initial ? 0 : searchOffset,
@@ -142,13 +158,16 @@ export function useArticleFeed(
         });
       case "related":
         return loadRelatedPage({
+          lang: lang.value,
           title: current.title,
           size: BATCH_SIZE,
           signal,
           exclude: excludedForSearch(),
         });
+      // "category" falls through to random until loadCategoryPage exists —
+      // nothing produces this mode yet, so this branch is unreachable today.
       default:
-        return loadRandomPage({ size: BATCH_SIZE, signal, exclude: excluded() });
+        return loadRandomPage({ lang: lang.value, size: BATCH_SIZE, signal, exclude: excluded() });
     }
   }
 
@@ -165,7 +184,7 @@ export function useArticleFeed(
       searchOffset = page.nextOffset ?? searchOffset;
       // Marked on arrival rather than on scroll-past: that is what makes a
       // refresh continue where it left off instead of re-serving the same page.
-      seen.remember(page.articles.map((article) => article.id));
+      seen.remember(page.articles.map((article) => ({ lang: article.lang, id: article.id })));
       dispatch({
         type: "page/success",
         generation,
@@ -217,13 +236,16 @@ export function useArticleFeed(
   });
 
   watch(
-    // Keyed on a stable string so an inline object literal does not retrigger.
-    () => serializeMode(mode.value),
+    // Keyed on lang plus a stable mode string, not mode alone: switching
+    // language while staying in "random" mode must still reset the feed, and
+    // serializeMode("random") is the same string before and after — the
+    // reducer's own no-op guard has the identical reasoning, see feedReducer.ts.
+    () => `${lang.value}:${serializeMode(mode.value)}`,
     () => {
       controller?.abort();
       controller = new AbortController();
       searchOffset = 0;
-      dispatch({ type: "mode/set", mode: mode.value });
+      dispatch({ type: "mode/set", mode: mode.value, lang: lang.value });
       void load(true);
     },
   );

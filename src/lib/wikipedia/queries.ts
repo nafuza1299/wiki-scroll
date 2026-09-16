@@ -5,27 +5,27 @@
   day for a month before anyone notices.
 */
 
-const REST = "https://en.wikipedia.org/api/rest_v1";
-const ACTION = "https://en.wikipedia.org/w/api.php";
+import { actionBase, restBase } from "./host";
+
 const METRICS = "https://wikimedia.org/api/rest_v1/metrics";
 
 function yyyymmdd(date: Date): string {
   return date.toISOString().slice(0, 10).replace(/-/g, "");
 }
 
-export function randomSummaryUrl(): string {
-  return `${REST}/page/random/summary`;
+export function randomSummaryUrl(lang: string): string {
+  return `${restBase(lang)}/page/random/summary`;
 }
 
-export function summaryUrl(title: string): string {
-  return `${REST}/page/summary/${encodeURIComponent(title.replace(/ /g, "_"))}`;
+export function summaryUrl(lang: string, title: string): string {
+  return `${restBase(lang)}/page/summary/${encodeURIComponent(title.replace(/ /g, "_"))}`;
 }
 
 /**
  * The 30 days ending yesterday. Today is excluded because the current day's
  * counts are still accumulating and would read as an artificial dip.
  */
-export function pageviews30dUrl(title: string, now: Date = new Date()): string {
+export function pageviews30dUrl(lang: string, title: string, now: Date = new Date()): string {
   const end = new Date(now);
   end.setUTCDate(end.getUTCDate() - 1);
   const start = new Date(end);
@@ -33,7 +33,7 @@ export function pageviews30dUrl(title: string, now: Date = new Date()): string {
 
   const article = encodeURIComponent(title.replace(/ /g, "_"));
   return (
-    `${METRICS}/pageviews/per-article/en.wikipedia/all-access/all-agents/` +
+    `${METRICS}/pageviews/per-article/${lang}.wikipedia/all-access/all-agents/` +
     `${article}/daily/${yyyymmdd(start)}/${yyyymmdd(end)}`
   );
 }
@@ -49,8 +49,19 @@ export function pageviews30dUrl(title: string, now: Date = new Date()): string {
   handles — and the summaries are cacheable, unlike the random endpoint.
 */
 
-/** Titles matching a query, most relevant first. `sroffset` paginates. */
-export function searchUrl(query: string, limit: number, offset = 0): string {
+/**
+ * Titles matching a query, most relevant first by default. `sroffset`
+ * paginates; `sort: "recent"` asks CirrusSearch for last-edited-first instead,
+ * via `srsort` — omitted entirely for the default so the URL (and the cache key
+ * it becomes) is unchanged for anyone not using the new filter.
+ */
+export function searchUrl(
+  lang: string,
+  query: string,
+  limit: number,
+  offset = 0,
+  sort: "relevance" | "recent" = "relevance",
+): string {
   const params = new URLSearchParams({
     action: "query",
     format: "json",
@@ -63,7 +74,8 @@ export function searchUrl(query: string, limit: number, offset = 0): string {
     srprop: "",
     origin: "*",
   });
-  return `${ACTION}?${params.toString()}`;
+  if (sort === "recent") params.set("srsort", "last_edit_desc");
+  return `${actionBase(lang)}?${params.toString()}`;
 }
 
 /**
@@ -73,12 +85,12 @@ export function searchUrl(query: string, limit: number, offset = 0): string {
  * throttles non-cacheable morelike queries and offers no stability guarantee,
  * and this returns a shape the app already normalises.
  */
-export function relatedUrl(title: string): string {
-  return `${REST}/page/related/${encodeURIComponent(title.replace(/ /g, "_"))}`;
+export function relatedUrl(lang: string, title: string): string {
+  return `${restBase(lang)}/page/related/${encodeURIComponent(title.replace(/ /g, "_"))}`;
 }
 
 /** Title suggestions for the search box. */
-export function openSearchUrl(query: string, limit = 8): string {
+export function openSearchUrl(lang: string, query: string, limit = 8): string {
   const params = new URLSearchParams({
     action: "opensearch",
     format: "json",
@@ -87,7 +99,7 @@ export function openSearchUrl(query: string, limit = 8): string {
     limit: String(limit),
     origin: "*",
   });
-  return `${ACTION}?${params.toString()}`;
+  return `${actionBase(lang)}?${params.toString()}`;
 }
 
 /**
@@ -97,7 +109,7 @@ export function openSearchUrl(query: string, limit = 8): string {
  * titles, and there is no bulk oldest-revision endpoint. That is why creation
  * dates are backfilled per card rather than fetched with the batch.
  */
-export function createdDateUrl(title: string): string {
+export function createdDateUrl(lang: string, title: string): string {
   const params = new URLSearchParams({
     action: "query",
     format: "json",
@@ -108,5 +120,5 @@ export function createdDateUrl(title: string): string {
     titles: title,
     origin: "*",
   });
-  return `${ACTION}?${params.toString()}`;
+  return `${actionBase(lang)}?${params.toString()}`;
 }

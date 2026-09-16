@@ -6,6 +6,8 @@ import { suggestTitles } from "../../lib/wikipedia/feedSource";
 export interface SearchBarProps {
   /** The query currently driving the feed, so the field survives a reload. */
   modelValue: string;
+  /** Which wiki suggestions and search should be drawn from. */
+  lang: string;
 }
 
 const props = defineProps<SearchBarProps>();
@@ -45,7 +47,7 @@ watch(draft, (query) => {
   debounce = setTimeout(() => {
     controller = new AbortController();
     const { signal } = controller;
-    void suggestTitles(query, signal).then((titles) => {
+    void suggestTitles(props.lang, query, signal).then((titles) => {
       if (!signal.aborted) suggestions.value = titles;
     });
   }, 250);

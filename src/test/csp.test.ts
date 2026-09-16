@@ -65,7 +65,10 @@ describe("Content-Security-Policy", () => {
   it("restricts where the app may connect and load images from", () => {
     const csp = cspContent();
 
-    expect(csp).toContain("connect-src 'self' https://en.wikipedia.org");
+    // A wildcard, not one literal host per language edition: img-src already
+    // trusted every *.wikipedia.org subdomain, and connect-src mirrors that
+    // now that a language switcher can point requests at any of them.
+    expect(csp).toContain("connect-src 'self' https://*.wikipedia.org");
     expect(csp).toContain("img-src 'self' data:");
   });
 });

@@ -20,11 +20,20 @@ interface SavedState {
 */
 const SAVED_CAP = 500;
 
+/*
+  Requiring `lang` is what makes a v1 entry (saved before language switching
+  existed) get dropped rather than silently mismatch a same-numbered article
+  from a different wiki. Bumping v1 to v2 is documentation; this shape check is
+  the actual mechanism — a v1 entry has no `lang` field, so it fails here and
+  the whole payload falls back to empty via `parse`, same as any other
+  corrupt-or-outdated store.
+*/
 function isEntry(value: unknown): value is SavedEntry {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Partial<SavedEntry>;
   return (
     typeof candidate.id === "number" &&
+    typeof candidate.lang === "string" &&
     typeof candidate.title === "string" &&
     typeof candidate.pageUrl === "string"
   );
@@ -32,7 +41,7 @@ function isEntry(value: unknown): value is SavedEntry {
 
 const store = createPersistedStore<SavedState>({
   key: "wiki-scroll:saved",
-  version: 1,
+  version: 2,
   fallback: () => ({ entries: [] }),
   parse: (data) => {
     if (typeof data !== "object" || data === null) return null;
@@ -48,9 +57,9 @@ export interface SavedArticles {
   /** Newest first. */
   saved: ComputedRef<SavedEntry[]>;
   count: ComputedRef<number>;
-  isSaved: (id: number) => boolean;
+  isSaved: (lang: string, id: number) => boolean;
   toggle: (article: Article) => void;
-  remove: (id: number) => void;
+  remove: (lang: string, id: number) => void;
   clear: () => void;
 }
 
@@ -59,13 +68,13 @@ export function useSavedArticles(): SavedArticles {
     [...store.state.value.entries].sort((a, b) => b.savedAt - a.savedAt),
   );
 
-  function isSaved(id: number): boolean {
-    return store.state.value.entries.some((entry) => entry.id === id);
+  function isSaved(lang: string, id: number): boolean {
+    return store.state.value.entries.some((entry) => entry.lang === lang && entry.id === id);
   }
 
   function toggle(article: Article): void {
-    if (isSaved(article.id)) {
-      remove(article.id);
+    if (isSaved(article.lang, article.id)) {
+      remove(article.lang, article.id);
       return;
     }
     store.update((previous) => {
@@ -76,9 +85,9 @@ export function useSavedArticles(): SavedArticles {
     });
   }
 
-  function remove(id: number): void {
+  function remove(lang: string, id: number): void {
     store.update((previous) => ({
-      entries: previous.entries.filter((entry) => entry.id !== id),
+      entries: previous.entries.filter((entry) => !(entry.lang === lang && entry.id === id)),
     }));
   }
 
