@@ -157,11 +157,12 @@ export async function loadSearchPage(options: {
   size: number;
   offset: number;
   signal: AbortSignal;
+  sort?: "relevance" | "recent";
   exclude?: (id: number) => boolean;
 }): Promise<FeedPageResult> {
-  const { lang, query, size, offset, signal, exclude } = options;
+  const { lang, query, size, offset, signal, sort = "relevance", exclude } = options;
 
-  const response = await fetchJson<SearchListResponse>(searchUrl(lang, query, size, offset), {
+  const response = await fetchJson<SearchListResponse>(searchUrl(lang, query, size, offset, sort), {
     signal,
   });
   const hits = response.query?.search ?? [];

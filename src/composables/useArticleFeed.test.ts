@@ -288,6 +288,34 @@ describe("useArticleFeed", () => {
   });
 
   /*
+    serializeMode includes sort specifically so this reloads rather than
+    no-op — but that alone doesn't prove the new sort actually reaches the
+    request. It previously didn't: loadPage's search case built its
+    loadSearchPage call without forwarding current.sort at all, so toggling
+    the control changed the URL and the mode object but the outgoing
+    srsort query param, silently, never moved.
+  */
+  it("requests last-edited-first ordering when sort changes to recent", async () => {
+    serveArticles();
+    let lastSearchUrl: string | undefined;
+    mockRoute("list=search", ({ url }) => {
+      lastSearchUrl = url;
+      return jsonResponse({
+        query: { search: [{ pageid: 1000, title: "Result 0" }] },
+      });
+    });
+
+    const mode = ref<FeedMode>({ kind: "search", query: "cats", sort: "relevance" });
+    const { feed } = mountFeed(mode);
+    await vi.waitFor(() => expect(feed().status.value).toBe("ready"), waitOptions);
+    expect(lastSearchUrl).not.toContain("srsort");
+
+    mode.value = { kind: "search", query: "cats", sort: "recent" };
+
+    await vi.waitFor(() => expect(lastSearchUrl).toContain("srsort=last_edit_desc"), waitOptions);
+  });
+
+  /*
     The recency filter. Articles read in an earlier session are excluded, which
     is what makes a refresh continue rather than re-serve the same page.
   */

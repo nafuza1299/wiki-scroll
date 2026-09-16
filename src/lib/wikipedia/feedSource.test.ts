@@ -262,6 +262,45 @@ describe("loadSearchPage", () => {
 
     expect(page.articles.map((a) => a.title)).toEqual(["Good"]);
   });
+
+  it("requests last-edited-first ordering when sort is recent", async () => {
+    serveSearch(["Cat"]);
+    let requestedUrl: string | undefined;
+    mockRoute("list=search", ({ url }) => {
+      requestedUrl = url;
+      return jsonResponse({ query: { search: [{ pageid: 100, title: "Cat" }] } });
+    });
+
+    await loadSearchPage({
+      lang: "en",
+      query: "pets",
+      size: 10,
+      offset: 0,
+      sort: "recent",
+      signal: new AbortController().signal,
+    });
+
+    expect(requestedUrl).toContain("srsort=last_edit_desc");
+  });
+
+  it("omits srsort when sort is left at its default", async () => {
+    serveSearch(["Cat"]);
+    let requestedUrl: string | undefined;
+    mockRoute("list=search", ({ url }) => {
+      requestedUrl = url;
+      return jsonResponse({ query: { search: [{ pageid: 100, title: "Cat" }] } });
+    });
+
+    await loadSearchPage({
+      lang: "en",
+      query: "pets",
+      size: 10,
+      offset: 0,
+      signal: new AbortController().signal,
+    });
+
+    expect(requestedUrl).not.toContain("srsort");
+  });
 });
 
 describe("loadRelatedPage", () => {

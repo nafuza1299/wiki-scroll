@@ -155,6 +155,7 @@ export function useArticleFeed(
           query: current.query,
           size: BATCH_SIZE,
           offset: initial ? 0 : searchOffset,
+          sort: current.sort,
           signal,
           exclude: excludedForSearch(),
         });
