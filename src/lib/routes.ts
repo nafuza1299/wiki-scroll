@@ -18,6 +18,10 @@ export interface AppRoute {
   related: string | null;
   /** Category-browsing seed, bare name without the "Category:" prefix. */
   category: string | null;
+  /** Creation-year bounds, inclusive, either end optional. Meaningless
+   *  outside category mode, same relationship `sort` has to a search query. */
+  yearFrom: number | null;
+  yearTo: number | null;
   /** Article open in the reader. */
   article: string | null;
   /** MediaWiki language/subdomain code. Always one of the supported codes. */
@@ -31,10 +35,26 @@ export const defaultRoute: AppRoute = {
   query: "",
   related: null,
   category: null,
+  yearFrom: null,
+  yearTo: null,
   article: null,
   lang: "en",
   sort: "relevance",
 };
+
+/**
+ * A bare year, digits only — rejects "2020abc", "-5", "1.5" and blanks alike
+ * rather than let `parseInt`'s leading-digit tolerance read garbage as 2020.
+ *
+ * Exported so CategoryFilter validates a typed year exactly the same way the
+ * URL does — the alternative, a second regex in the component, is the kind of
+ * duplication that drifts the first time one of them changes.
+ */
+export function parseYear(raw: string | null): number | null {
+  const trimmed = raw?.trim() ?? "";
+  if (!/^\d{1,4}$/.test(trimmed)) return null;
+  return Number.parseInt(trimmed, 10);
+}
 
 export function parseRoute(search: string): AppRoute {
   const params = new URLSearchParams(search);
@@ -53,11 +73,19 @@ export function parseRoute(search: string): AppRoute {
 
   const sort = params.get("sort") === "recent" ? "recent" : "relevance";
 
+  // Same relationship sort has to query: meaningless without a category, so a
+  // URL that somehow carries one without the other reads as unset rather than
+  // silently filtering a feed the bounds were never meant to apply to.
+  const yearFrom = category ? parseYear(params.get("yf")) : null;
+  const yearTo = category ? parseYear(params.get("yt")) : null;
+
   return {
     view,
     query,
     related,
     category,
+    yearFrom,
+    yearTo,
     article: params.get("article")?.trim() || null,
     lang,
     sort,
@@ -78,6 +106,8 @@ export function serializeRoute(route: AppRoute): string {
     if (route.sort !== "relevance") params.set("sort", route.sort);
   } else if (route.category) {
     params.set("cat", route.category);
+    if (route.yearFrom !== null) params.set("yf", String(route.yearFrom));
+    if (route.yearTo !== null) params.set("yt", String(route.yearTo));
   } else if (route.related) {
     params.set("like", route.related);
   }

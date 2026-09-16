@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { oldestRevisionTimestamp, sumPageviews, toArticle, truncateExtract } from "./article";
+import {
+  articleYear,
+  oldestRevisionTimestamp,
+  sumPageviews,
+  toArticle,
+  truncateExtract,
+} from "./article";
 import type { RestSummary } from "./types";
 
 const summary: RestSummary = {
@@ -108,6 +114,20 @@ describe("sumPageviews", () => {
 
   it("returns zero for an empty but present window", () => {
     expect(sumPageviews({ items: [] })).toBe(0);
+  });
+});
+
+describe("articleYear", () => {
+  it("reads the UTC calendar year", () => {
+    expect(articleYear("2010-05-01T00:00:00Z")).toBe(2010);
+  });
+
+  it("returns null for a null timestamp", () => {
+    expect(articleYear(null)).toBeNull();
+  });
+
+  it("returns null rather than NaN for an unparseable timestamp", () => {
+    expect(articleYear("not a date")).toBeNull();
   });
 });
 

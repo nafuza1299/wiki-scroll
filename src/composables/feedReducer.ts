@@ -13,7 +13,7 @@ export type FeedMode =
   | { kind: "random" }
   | { kind: "search"; query: string; sort: "relevance" | "recent" }
   | { kind: "related"; title: string }
-  | { kind: "category"; name: string };
+  | { kind: "category"; name: string; yearFrom: number | null; yearTo: number | null };
 
 /** First-page status. `empty` is a success with nothing in it, not a failure. */
 export type FeedStatus = "loading" | "ready" | "empty" | "error";
@@ -59,7 +59,7 @@ export function serializeMode(mode: FeedMode): string {
     case "related":
       return `related:${mode.title}`;
     case "category":
-      return `category:${mode.name}`;
+      return `category:${mode.yearFrom ?? ""}:${mode.yearTo ?? ""}:${mode.name}`;
     default:
       return "random";
   }

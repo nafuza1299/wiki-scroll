@@ -461,6 +461,131 @@ describe("loadCategoryPage", () => {
 
     expect(page.articles.every((a) => a.lang === "de")).toBe(true);
   });
+
+  describe("year filtering", () => {
+    function serveCreatedYears(years: Record<string, number>): void {
+      mockRoute("prop=revisions", ({ url }) => {
+        const title = new URL(url).searchParams.get("titles") ?? "";
+        const year = years[title];
+        if (year === undefined) return jsonResponse({ query: { pages: {} } });
+        return jsonResponse({
+          query: {
+            pages: { "1": { revisions: [{ timestamp: `${year}-06-15T00:00:00Z` }] } },
+          },
+        });
+      });
+    }
+
+    it("keeps only members created within the range", async () => {
+      serveCategory(["Old", "InRange", "Future"]);
+      serveCreatedYears({ Old: 1950, InRange: 1975, Future: 2000 });
+
+      const page = await loadCategoryPage({
+        lang: "en",
+        name: "Physics",
+        size: 10,
+        cursor: undefined,
+        signal: new AbortController().signal,
+        yearFrom: 1960,
+        yearTo: 1990,
+      });
+
+      expect(page.articles.map((a) => a.title)).toEqual(["InRange"]);
+    });
+
+    it("treats an unresolvable creation date as excluded, not included", async () => {
+      serveCategory(["Known", "Unknown"]);
+      serveCreatedYears({ Known: 1975 });
+
+      const page = await loadCategoryPage({
+        lang: "en",
+        name: "Physics",
+        size: 10,
+        cursor: undefined,
+        signal: new AbortController().signal,
+        yearFrom: 1960,
+        yearTo: 1990,
+      });
+
+      expect(page.articles.map((a) => a.title)).toEqual(["Known"]);
+    });
+
+    it("supports an open-ended range at either end", async () => {
+      serveCategory(["Old", "New"]);
+      serveCreatedYears({ Old: 1950, New: 2020 });
+
+      const fromOnly = await loadCategoryPage({
+        lang: "en",
+        name: "Physics",
+        size: 10,
+        cursor: undefined,
+        signal: new AbortController().signal,
+        yearFrom: 2000,
+        yearTo: null,
+      });
+      expect(fromOnly.articles.map((a) => a.title)).toEqual(["New"]);
+
+      const toOnly = await loadCategoryPage({
+        lang: "en",
+        name: "Physics",
+        size: 10,
+        cursor: undefined,
+        signal: new AbortController().signal,
+        yearFrom: null,
+        yearTo: 1999,
+      });
+      expect(toOnly.articles.map((a) => a.title)).toEqual(["Old"]);
+    });
+
+    it("attaches the resolved creation date to the returned article", async () => {
+      serveCategory(["InRange"]);
+      serveCreatedYears({ InRange: 1975 });
+
+      const page = await loadCategoryPage({
+        lang: "en",
+        name: "Physics",
+        size: 10,
+        cursor: undefined,
+        signal: new AbortController().signal,
+        yearFrom: 1960,
+        yearTo: 1990,
+      });
+
+      expect(page.articles[0]?.createdAt).toBe("1975-06-15T00:00:00Z");
+    });
+
+    it("requests more members per page than an unfiltered browse would", async () => {
+      serveCategory(["A"]);
+      serveCreatedYears({ A: 1975 });
+
+      await loadCategoryPage({
+        lang: "en",
+        name: "Physics",
+        size: 10,
+        cursor: undefined,
+        signal: new AbortController().signal,
+        yearFrom: 1960,
+        yearTo: 1990,
+      });
+
+      const categoryCall = fetchCalls().find((url) => url.includes("generator=categorymembers"));
+      expect(categoryCall).toContain("gcmlimit=40");
+    });
+
+    it("does not fetch creation dates at all when no range is given", async () => {
+      serveCategory(["Electron"]);
+
+      await loadCategoryPage({
+        lang: "en",
+        name: "Physics",
+        size: 10,
+        cursor: undefined,
+        signal: new AbortController().signal,
+      });
+
+      expect(fetchCalls().some((url) => url.includes("prop=revisions"))).toBe(false);
+    });
+  });
 });
 
 describe("suggestTitles", () => {

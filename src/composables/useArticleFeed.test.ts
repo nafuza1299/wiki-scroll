@@ -390,7 +390,7 @@ describe("useArticleFeed", () => {
 
   it("loads category members in category mode", async () => {
     serveArticles();
-    const mode = ref<FeedMode>({ kind: "category", name: "Physics" });
+    const mode = ref<FeedMode>({ kind: "category", name: "Physics", yearFrom: null, yearTo: null });
     const { feed } = mountFeed(mode);
 
     await vi.waitFor(() => expect(feed().status.value).toBe("ready"), waitOptions);
@@ -400,6 +400,24 @@ describe("useArticleFeed", () => {
         .articles.value.map((a) => a.id)
         .sort(),
     ).toEqual([3001, 3002]);
+  });
+
+  /*
+    Proves the composable actually threads yearFrom/yearTo through to
+    loadCategoryPage rather than silently dropping them — the filtering logic
+    itself is feedSource.test.ts's job. serveArticles()'s default
+    prop=revisions stub resolves no creation date for anything, so a year
+    filter that reached loadCategoryPage excludes every candidate; the
+    previous test (no filter) shows the same members come back unfiltered.
+  */
+  it("passes the category's year bounds through to the loader", async () => {
+    serveArticles();
+    const mode = ref<FeedMode>({ kind: "category", name: "Physics", yearFrom: 1900, yearTo: 1950 });
+    const { feed } = mountFeed(mode);
+
+    await vi.waitFor(() => expect(feed().status.value).toBe("empty"), waitOptions);
+
+    expect(feed().articles.value).toEqual([]);
   });
 
   it("loads related articles in one request and then stops", async () => {

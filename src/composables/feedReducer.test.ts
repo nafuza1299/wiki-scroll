@@ -32,12 +32,24 @@ describe("serializeMode", () => {
       "search:relevance:cats",
     );
     expect(serializeMode({ kind: "related", title: "Cat" })).toBe("related:Cat");
-    expect(serializeMode({ kind: "category", name: "Physics" })).toBe("category:Physics");
+    expect(serializeMode({ kind: "category", name: "Physics", yearFrom: null, yearTo: null })).toBe(
+      "category:::Physics",
+    );
   });
 
   it("distinguishes a search by its sort order too", () => {
     expect(serializeMode({ kind: "search", query: "cats", sort: "relevance" })).not.toBe(
       serializeMode({ kind: "search", query: "cats", sort: "recent" }),
+    );
+  });
+
+  it("distinguishes a category by its year bounds too", () => {
+    const base = { kind: "category" as const, name: "Physics" };
+    expect(serializeMode({ ...base, yearFrom: null, yearTo: null })).not.toBe(
+      serializeMode({ ...base, yearFrom: 1900, yearTo: null }),
+    );
+    expect(serializeMode({ ...base, yearFrom: 1900, yearTo: null })).not.toBe(
+      serializeMode({ ...base, yearFrom: 1900, yearTo: 1950 }),
     );
   });
 });

@@ -3,6 +3,7 @@ import { computed, onErrorCaptured, ref } from "vue";
 import ArticleCard from "./components/ArticleCard/ArticleCard.vue";
 import ArticleReader from "./components/ArticleReader/ArticleReader.vue";
 import Button from "./components/Button/Button.vue";
+import CategoryFilter from "./components/CategoryFilter/CategoryFilter.vue";
 import LanguagePicker from "./components/LanguagePicker/LanguagePicker.vue";
 import { Modal } from "./components/Modal/Modal";
 import Notice from "./components/Notice/Notice.vue";
@@ -38,10 +39,24 @@ const sort = computed(() => route.value.sort);
 const mode = computed<FeedMode>(() => {
   if (route.value.query)
     return { kind: "search", query: route.value.query, sort: route.value.sort };
-  if (route.value.category) return { kind: "category", name: route.value.category };
+  if (route.value.category) {
+    return {
+      kind: "category",
+      name: route.value.category,
+      yearFrom: route.value.yearFrom,
+      yearTo: route.value.yearTo,
+    };
+  }
   if (route.value.related) return { kind: "related", title: route.value.related };
   return { kind: "random" };
 });
+
+/** " (1900–1950)", " (1900–)", " (–1950)", or "" — for the mode banner only. */
+function categoryYearSuffix(mode: { yearFrom: number | null; yearTo: number | null }): string {
+  const { yearFrom, yearTo } = mode;
+  if (yearFrom === null && yearTo === null) return "";
+  return ` (${yearFrom ?? ""}–${yearTo ?? ""})`;
+}
 
 /*
   The search box keeps showing what was typed while a category seed is active,
@@ -61,14 +76,53 @@ function search(next: string): void {
   const match = CATEGORY_PREFIX.exec(trimmed);
   if (match) {
     const name = trimmed.slice(match[0].length).trim();
+    // A fresh category seed, not a refinement of whatever CategoryFilter last
+    // set — retyping "Category:Physics" here starts over rather than
+    // silently keeping a year range this box has no way to show or edit.
     navigate(
-      { ...route.value, query: "", category: name || null, related: null, article: null },
+      {
+        ...route.value,
+        query: "",
+        category: name || null,
+        yearFrom: null,
+        yearTo: null,
+        related: null,
+        article: null,
+      },
       { replace: true },
     );
     return;
   }
   navigate(
-    { ...route.value, query: next, category: null, related: null, article: null },
+    {
+      ...route.value,
+      query: next,
+      category: null,
+      yearFrom: null,
+      yearTo: null,
+      related: null,
+      article: null,
+    },
+    { replace: true },
+  );
+}
+
+/** CategoryFilter's own submit — the one path that actually sets a year range. */
+function setCategory(seed: {
+  category: string;
+  yearFrom: number | null;
+  yearTo: number | null;
+}): void {
+  navigate(
+    {
+      ...route.value,
+      query: "",
+      category: seed.category,
+      yearFrom: seed.yearFrom,
+      yearTo: seed.yearTo,
+      related: null,
+      article: null,
+    },
     { replace: true },
   );
 }
@@ -78,7 +132,14 @@ function showRelatedTo(title: string): void {
 }
 
 function backToRandom(): void {
-  navigate({ ...route.value, query: "", category: null, related: null });
+  navigate({
+    ...route.value,
+    query: "",
+    category: null,
+    yearFrom: null,
+    yearTo: null,
+    related: null,
+  });
 }
 
 function toggleView(): void {
@@ -279,6 +340,20 @@ function reload(): void {
           @update:sort="setSort"
         />
 
+        <!--
+          A dedicated control for the same seed the "Category:" prefix above
+          sets — typing it there stays the quick path; this is the one that
+          also has year bounds to offer. Both write the same route fields, so
+          either can edit what the other set.
+        -->
+        <CategoryFilter
+          :category="route.category ?? ''"
+          :year-from="route.yearFrom"
+          :year-to="route.yearTo"
+          @submit="setCategory"
+          @clear="backToRandom"
+        />
+
         <!-- Says what the feed is currently showing, and how to leave it. -->
         <div
           v-if="mode.kind !== 'random'"
@@ -289,7 +364,7 @@ function reload(): void {
               mode.kind === "search"
                 ? `Results for “${mode.query}”`
                 : mode.kind === "category"
-                  ? `Category: ${mode.name}`
+                  ? `Category: ${mode.name}${categoryYearSuffix(mode)}`
                   : `Similar to ${mode.title}`
             }}
           </span>
@@ -327,7 +402,9 @@ function reload(): void {
             mode.kind === 'search'
               ? 'Try a different search.'
               : mode.kind === 'category'
-                ? 'That category may not exist, or has no articles.'
+                ? mode.yearFrom || mode.yearTo
+                  ? 'That category may not exist, or has no articles from that range.'
+                  : 'That category may not exist, or has no articles.'
                 : 'Wikipedia returned no articles we could display.'
           "
         >

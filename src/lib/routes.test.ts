@@ -12,6 +12,8 @@ describe("parseRoute", () => {
       query: "cats",
       related: null,
       category: null,
+      yearFrom: null,
+      yearTo: null,
       article: "Cat",
       lang: "en",
       sort: "relevance",
@@ -27,6 +29,35 @@ describe("parseRoute", () => {
     expect(route.category).toBe("Physics");
     expect(route.query).toBe("");
     expect(route.related).toBeNull();
+  });
+
+  it("reads a category's year bounds", () => {
+    const route = parseRoute("?cat=Physics&yf=1900&yt=1950");
+    expect(route.yearFrom).toBe(1900);
+    expect(route.yearTo).toBe(1950);
+  });
+
+  it("reads an open-ended year bound", () => {
+    expect(parseRoute("?cat=Physics&yf=1900").yearTo).toBeNull();
+    expect(parseRoute("?cat=Physics&yt=1950").yearFrom).toBeNull();
+  });
+
+  it("ignores year bounds without a category", () => {
+    const route = parseRoute("?q=cats&yf=1900&yt=1950");
+    expect(route.yearFrom).toBeNull();
+    expect(route.yearTo).toBeNull();
+  });
+
+  it("ignores an unparseable year", () => {
+    const route = parseRoute("?cat=Physics&yf=abc&yt=1900.5");
+    expect(route.yearFrom).toBeNull();
+    expect(route.yearTo).toBeNull();
+  });
+
+  it("ignores a negative or absurdly long year", () => {
+    const route = parseRoute("?cat=Physics&yf=-5&yt=123456");
+    expect(route.yearFrom).toBeNull();
+    expect(route.yearTo).toBeNull();
   });
 
   /*
@@ -122,6 +153,27 @@ describe("serializeRoute", () => {
     expect(serializeRoute({ ...defaultRoute, category: "Physics" })).toContain("cat=Physics");
   });
 
+  it("writes year bounds only alongside a category", () => {
+    const withoutCategory = serializeRoute({ ...defaultRoute, yearFrom: 1900, yearTo: 1950 });
+    const withCategory = serializeRoute({
+      ...defaultRoute,
+      category: "Physics",
+      yearFrom: 1900,
+      yearTo: 1950,
+    });
+
+    expect(withoutCategory).not.toContain("yf=");
+    expect(withoutCategory).not.toContain("yt=");
+    expect(withCategory).toContain("yf=1900");
+    expect(withCategory).toContain("yt=1950");
+  });
+
+  it("writes an open-ended year bound as just the one param", () => {
+    const search = serializeRoute({ ...defaultRoute, category: "Physics", yearFrom: 1900 });
+    expect(search).toContain("yf=1900");
+    expect(search).not.toContain("yt=");
+  });
+
   it("omits the language for the default, English", () => {
     expect(serializeRoute({ ...defaultRoute, lang: "en" })).not.toContain("lang=");
   });
@@ -176,6 +228,8 @@ describe("round-tripping", () => {
       query: "a b+c",
       related: null,
       category: null,
+      yearFrom: null,
+      yearTo: null,
       article: "X&Y",
       lang: "fr",
       sort: "recent" as const,
@@ -185,6 +239,11 @@ describe("round-tripping", () => {
 
   it("round-trips a category route", () => {
     const route = { ...defaultRoute, category: "20th-century physicists" };
+    expect(parseRoute(serializeRoute(route))).toEqual(route);
+  });
+
+  it("round-trips a category route with year bounds", () => {
+    const route = { ...defaultRoute, category: "Physicists", yearFrom: 1900, yearTo: 1950 };
     expect(parseRoute(serializeRoute(route))).toEqual(route);
   });
 });
