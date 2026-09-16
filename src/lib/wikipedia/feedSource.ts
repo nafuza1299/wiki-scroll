@@ -1,6 +1,7 @@
 import { fetchJson } from "../http";
 import { oldestRevisionTimestamp, sumPageviews, toArticle, type Article } from "./article";
 import {
+  categoryMembersUrl,
   createdDateUrl,
   openSearchUrl,
   pageviews30dUrl,
@@ -10,6 +11,7 @@ import {
   summaryUrl,
 } from "./queries";
 import type {
+  CategoryMembersResponse,
   OpenSearchResponse,
   PageviewsResponse,
   RelatedResponse,
@@ -53,6 +55,11 @@ export interface FeedPageResult {
   exhausted: boolean;
   /** Search only: the offset to ask for next. */
   nextOffset?: number;
+  /** Category only: the opaque continuation cursor to ask for next. A separate
+   *  field rather than widening nextOffset to number|string — each mode's
+   *  cursor is a different shape, and a caller should never have to guess
+   *  which one a given result is carrying. */
+  nextCursor?: string;
 }
 
 /** Shared filtering: drop unusable, duplicated, and already-seen articles. */
@@ -77,18 +84,19 @@ function collectPage(
   return { articles, discarded };
 }
 
-async function fetchRandomSummary(signal: AbortSignal): Promise<Article | null> {
+async function fetchRandomSummary(lang: string, signal: AbortSignal): Promise<Article | null> {
   // "bypass": every call shares one URL but must produce a different article, so
   // caching or in-flight sharing would collapse the whole batch into one page.
-  const summary = await fetchJson<RestSummary>(randomSummaryUrl(), {
+  const summary = await fetchJson<RestSummary>(randomSummaryUrl(lang), {
     signal,
     cache: "bypass",
     retries: 1,
   });
-  return toArticle(summary);
+  return toArticle(summary, lang);
 }
 
 export async function loadRandomPage(options: {
+  lang: string;
   size: number;
   signal: AbortSignal;
   /**
@@ -97,11 +105,11 @@ export async function loadRandomPage(options: {
    */
   exclude?: (id: number) => boolean;
 }): Promise<FeedPageResult> {
-  const { size, signal, exclude } = options;
+  const { lang, size, signal, exclude } = options;
   const requested = Math.ceil(size * OVERFETCH);
 
   const settled = await Promise.allSettled(
-    Array.from({ length: requested }, () => fetchRandomSummary(signal)),
+    Array.from({ length: requested }, () => fetchRandomSummary(lang, signal)),
   );
 
   if (signal.aborted) throw new DOMException("The operation was aborted.", "AbortError");
@@ -128,28 +136,35 @@ export async function loadRandomPage(options: {
 
 /** Summaries by title, tolerating individual failures. */
 async function summariesFor(
+  lang: string,
   titles: readonly string[],
   signal: AbortSignal,
 ): Promise<Array<Article | null>> {
   const settled = await Promise.allSettled(
     titles.map((title) =>
       // Cacheable, unlike random: the same title always means the same article.
-      fetchJson<RestSummary>(summaryUrl(title), { signal, retries: 1 }).then(toArticle),
+      fetchJson<RestSummary>(summaryUrl(lang, title), { signal, retries: 1 }).then((summary) =>
+        toArticle(summary, lang),
+      ),
     ),
   );
   return settled.map((result) => (result.status === "fulfilled" ? result.value : null));
 }
 
 export async function loadSearchPage(options: {
+  lang: string;
   query: string;
   size: number;
   offset: number;
   signal: AbortSignal;
+  sort?: "relevance" | "recent";
   exclude?: (id: number) => boolean;
 }): Promise<FeedPageResult> {
-  const { query, size, offset, signal, exclude } = options;
+  const { lang, query, size, offset, signal, sort = "relevance", exclude } = options;
 
-  const response = await fetchJson<SearchListResponse>(searchUrl(query, size, offset), { signal });
+  const response = await fetchJson<SearchListResponse>(searchUrl(lang, query, size, offset, sort), {
+    signal,
+  });
   const hits = response.query?.search ?? [];
   const titles = hits
     .map((hit) => hit.title)
@@ -163,30 +178,88 @@ export async function loadSearchPage(options: {
     return { articles: [], discarded: 0, exhausted: true };
   }
 
-  const { articles, discarded } = collectPage(await summariesFor(titles, signal), size, exclude);
+  const { articles, discarded } = collectPage(
+    await summariesFor(lang, titles, signal),
+    size,
+    exclude,
+  );
   return { articles, discarded, exhausted, nextOffset };
 }
 
 export async function loadRelatedPage(options: {
+  lang: string;
   title: string;
   size: number;
   signal: AbortSignal;
   exclude?: (id: number) => boolean;
 }): Promise<FeedPageResult> {
-  const { title, size, signal, exclude } = options;
+  const { lang, title, size, signal, exclude } = options;
 
-  const response = await fetchJson<RelatedResponse>(relatedUrl(title), { signal });
-  const candidates = (response.pages ?? []).map(toArticle);
+  const response = await fetchJson<RelatedResponse>(relatedUrl(lang, title), { signal });
+  const candidates = (response.pages ?? []).map((summary) => toArticle(summary, lang));
   const { articles, discarded } = collectPage(candidates, size, exclude);
 
   // One request returns everything related there is.
   return { articles, discarded, exhausted: true };
 }
 
+/**
+ * A category browsed as a feed.
+ *
+ * Structurally a sibling of loadSearchPage: `generator=categorymembers` gives
+ * titles, not full summaries, so it reuses the exact summariesFor() round-trip
+ * search already relies on — one extra request per article, but no second
+ * summary-parsing path to maintain for one entry point.
+ *
+ * Continuation is `gcmcontinue`, an opaque cursor, not search's numeric
+ * `sroffset` — hence FeedPageResult.nextCursor rather than reusing nextOffset.
+ *
+ * Uses excludedForSearch() (on-screen dedup only), the same choice loadSearchPage
+ * makes and for the same reason: hiding a category member because it was read
+ * last week would look like the listing is broken, not like a feature.
+ */
+export async function loadCategoryPage(options: {
+  lang: string;
+  name: string;
+  size: number;
+  cursor: string | undefined;
+  signal: AbortSignal;
+  exclude?: (id: number) => boolean;
+}): Promise<FeedPageResult> {
+  const { lang, name, size, cursor, signal, exclude } = options;
+
+  const response = await fetchJson<CategoryMembersResponse>(
+    categoryMembersUrl(lang, name, size, cursor),
+    { signal },
+  );
+  const pages = response.query?.pages ?? {};
+  const titles = Object.values(pages)
+    .map((page) => page?.title)
+    .filter((title): title is string => typeof title === "string");
+
+  const nextCursor = response.continue?.gcmcontinue;
+  const exhausted = nextCursor === undefined;
+
+  if (titles.length === 0) {
+    return { articles: [], discarded: 0, exhausted: true };
+  }
+
+  const { articles, discarded } = collectPage(
+    await summariesFor(lang, titles, signal),
+    size,
+    exclude,
+  );
+  return { articles, discarded, exhausted, nextCursor };
+}
+
 /** Title suggestions for the search box. Never throws — suggestions are optional. */
-export async function suggestTitles(query: string, signal: AbortSignal): Promise<string[]> {
+export async function suggestTitles(
+  lang: string,
+  query: string,
+  signal: AbortSignal,
+): Promise<string[]> {
   try {
-    const response = await fetchJson<OpenSearchResponse>(openSearchUrl(query), { signal });
+    const response = await fetchJson<OpenSearchResponse>(openSearchUrl(lang, query), { signal });
     return Array.isArray(response?.[1]) ? response[1] : [];
   } catch {
     return [];
@@ -204,12 +277,13 @@ export interface ArticleEnrichment {
  * worth showing anyone.
  */
 export async function enrichArticle(
+  lang: string,
   title: string,
   signal: AbortSignal,
 ): Promise<ArticleEnrichment> {
   const [views, created] = await Promise.allSettled([
-    fetchJson<PageviewsResponse>(pageviews30dUrl(title), { signal, retries: 1 }),
-    fetchJson<RevisionsResponse>(createdDateUrl(title), { signal, retries: 1 }),
+    fetchJson<PageviewsResponse>(pageviews30dUrl(lang, title), { signal, retries: 1 }),
+    fetchJson<RevisionsResponse>(createdDateUrl(lang, title), { signal, retries: 1 }),
   ]);
 
   return {

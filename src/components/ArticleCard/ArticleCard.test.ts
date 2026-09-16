@@ -6,6 +6,7 @@ import type { Article } from "../../lib/wikipedia/article";
 
 const article: Article = {
   id: 42,
+  lang: "en",
   title: "Marie Curie",
   extract: "A Polish and naturalised-French physicist and chemist.",
   thumbnailUrl: "https://example.test/curie.jpg",

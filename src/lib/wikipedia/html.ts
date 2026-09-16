@@ -1,13 +1,11 @@
 import { fetchText, isAbortError } from "../http";
+import { actionBase, restBase } from "./host";
 
-const REST = "https://en.wikipedia.org/api/rest_v1";
-const ACTION = "https://en.wikipedia.org/w/api.php";
-
-export function mobileHtmlUrl(title: string): string {
-  return `${REST}/page/mobile-html/${encodeURIComponent(title.replace(/ /g, "_"))}`;
+export function mobileHtmlUrl(lang: string, title: string): string {
+  return `${restBase(lang)}/page/mobile-html/${encodeURIComponent(title.replace(/ /g, "_"))}`;
 }
 
-export function parseHtmlUrl(title: string): string {
+export function parseHtmlUrl(lang: string, title: string): string {
   const params = new URLSearchParams({
     action: "parse",
     format: "json",
@@ -16,7 +14,7 @@ export function parseHtmlUrl(title: string): string {
     page: title,
     origin: "*",
   });
-  return `${ACTION}?${params.toString()}`;
+  return `${actionBase(lang)}?${params.toString()}`;
 }
 
 interface ParseResponse {
@@ -34,20 +32,28 @@ interface ParseResponse {
   than PCS ones, so reader.css needs a few more selectors, and that is the whole
   cost of the swap.
 */
-export async function fetchArticleHtml(title: string, signal: AbortSignal): Promise<string> {
+export async function fetchArticleHtml(
+  lang: string,
+  title: string,
+  signal: AbortSignal,
+): Promise<string> {
   try {
-    return await fetchText(mobileHtmlUrl(title), { signal, retries: 1 });
+    return await fetchText(mobileHtmlUrl(lang, title), { signal, retries: 1 });
   } catch (error) {
     if (isAbortError(error)) throw error;
-    const response = await fetchJsonParse(title, signal);
+    const response = await fetchJsonParse(lang, title, signal);
     if (response) return response;
     throw error;
   }
 }
 
-async function fetchJsonParse(title: string, signal: AbortSignal): Promise<string | null> {
+async function fetchJsonParse(
+  lang: string,
+  title: string,
+  signal: AbortSignal,
+): Promise<string | null> {
   try {
-    const raw = await fetchText(parseHtmlUrl(title), { signal, retries: 1 });
+    const raw = await fetchText(parseHtmlUrl(lang, title), { signal, retries: 1 });
     const data = JSON.parse(raw) as ParseResponse;
     return data.parse?.text ?? null;
   } catch {

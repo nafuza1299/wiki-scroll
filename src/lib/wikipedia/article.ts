@@ -2,6 +2,8 @@ import type { PageviewsResponse, RestSummary, RevisionsResponse } from "./types"
 
 export interface Article {
   id: number;
+  /** Which wiki this came from, e.g. "en", "fr". Ids are only unique per-wiki. */
+  lang: string;
   title: string;
   extract: string;
   thumbnailUrl: string | null;
@@ -27,7 +29,7 @@ export function truncateExtract(extract: string): string {
  * payload is an ordinary outcome of asking for a *random* page, not an error,
  * and the caller drops it and keeps the rest of the batch.
  */
-export function toArticle(summary: RestSummary): Article | null {
+export function toArticle(summary: RestSummary, lang: string): Article | null {
   // "standard" excludes disambiguation pages, extract-less stubs and the main
   // page. It is the only quality filter the REST endpoint gives us.
   if (summary.type !== undefined && summary.type !== "standard") return null;
@@ -39,6 +41,7 @@ export function toArticle(summary: RestSummary): Article | null {
 
   return {
     id,
+    lang,
     title,
     extract: truncateExtract(summary.extract ?? ""),
     thumbnailUrl: summary.thumbnail?.source ?? null,

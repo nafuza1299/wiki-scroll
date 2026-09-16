@@ -74,12 +74,21 @@ with no key, no proxy and no server of our own:
 
 | What             | Endpoint                                                      |
 | ---------------- | ------------------------------------------------------------- |
-| Random article   | `en.wikipedia.org/api/rest_v1/page/random/summary`            |
+| Random article   | `{lang}.wikipedia.org/api/rest_v1/page/random/summary`        |
 | Search           | `w/api.php?action=query&list=search`, then a summary per hit  |
-| More like this   | `en.wikipedia.org/api/rest_v1/page/related/{title}`           |
+| More like this   | `{lang}.wikipedia.org/api/rest_v1/page/related/{title}`       |
+| Category browse  | `w/api.php?action=query&generator=categorymembers`            |
 | Suggestions      | `w/api.php?action=opensearch`                                 |
 | Page views (30d) | `wikimedia.org/api/rest_v1/metrics/pageviews/per-article/...` |
 | Creation date    | `w/api.php?action=query&prop=revisions&rvdir=newer`           |
+
+`{lang}` is a MediaWiki language/subdomain code — `en`, `fr`, `de`, and so on —
+picked from the language dropdown in the header and carried in the URL as
+`?lang=`. Every request goes to that language's own wiki; there is no
+cross-language merging or fallback. Page ids are only unique per wiki, so saved
+articles and reading history key on `(lang, id)` pairs rather than the bare id
+— otherwise a same-numbered article from a different language could silently
+look already-saved or already-read.
 
 Only the first blocks. View counts and creation dates are fetched afterwards, at
 most four at a time, and patched onto cards that are already on screen — so a
@@ -93,6 +102,14 @@ response shape the app already normalises, and summaries are cacheable by title.
 "More like this" uses the REST related endpoint over CirrusSearch's `morelike:`,
 which Wikimedia throttles for non-cacheable queries and offers no stability
 guarantee for.
+
+Typing `Category:Physics` into the search box switches to browsing that
+category instead of running a literal-string search for it — a fourth feed
+mode, structurally a sibling of search: `generator=categorymembers` returns
+titles, which get resolved to summaries the same way search results do.
+Searching can also be sorted by "Recently edited" instead of relevance, via
+`srsort=last_edit_desc` — a small `<select>` next to the search field, shown
+only while an actual text search is active.
 
 **Possible follow-up:** random, search and their metadata all collapse into
 _single_ `action=query&generator=…` calls carrying extracts, thumbnails, URLs,
@@ -118,8 +135,9 @@ scroll the page, and `j`/`k` do the same job without taking that away. `j`/`k`
 move real DOM focus, not just the scroll position, so the change is announced
 rather than silent.
 
-State lives in the query string (`?q=`, `?like=`, `?article=`, `?view=saved`),
-never the path: there is no server here, and a static host answers `/article/Foo`
+State lives in the query string (`?q=`, `?like=`, `?cat=`, `?article=`,
+`?view=saved`, `?lang=`, `?sort=`), never the path: there is no server here,
+and a static host answers `/article/Foo`
 with a 404 unless someone writes a rewrite rule. Opening an article pushes a
 history entry, so Back closes the reader — which is what the hardware Back button
 is expected to do. A `?article=` link opens in a cold tab with no feed behind it,

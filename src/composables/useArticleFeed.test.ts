@@ -64,6 +64,22 @@ function serveArticles(options: { searchHits?: number; searchTotal?: number } = 
     jsonResponse({ pages: [summary(2001), summary(2002), summary(2003)] }),
   );
 
+  mockRoute("generator=categorymembers", () =>
+    jsonResponse({
+      query: {
+        pages: {
+          "3001": { pageid: 3001, title: "Category Member 1" },
+          "3002": { pageid: 3002, title: "Category Member 2" },
+        },
+      },
+    }),
+  );
+  mockRoute("/page/summary/Category_Member", ({ url }) => {
+    const title = decodeURIComponent(url.split("/page/summary/")[1] ?? "");
+    const id = title.endsWith("1") ? 3001 : 3002;
+    return jsonResponse({ ...summary(id), title });
+  });
+
   mockRoute("/metrics/pageviews", () => jsonResponse({ items: [{ views: 5 }] }));
   mockRoute("prop=revisions", () => jsonResponse({ query: { pages: {} } }));
 }
@@ -78,21 +94,29 @@ function failEverything(): void {
   A fresh in-memory seen-set per mount. The real one is a persisted app-wide
   singleton, so without injecting here each test would inherit the ids the
   previous test read and the feed would legitimately run out of articles.
+
+  `initial` stays plain numbers for the tests' convenience — everything here
+  is single-language ("en") — but the tracker itself speaks the real
+  composite-key interface, so it exercises exactly what production code calls.
 */
 function makeSeen(initial: readonly number[] = []): SeenTracker {
-  const ids = new Set(initial);
+  const keys = new Set(initial.map((id) => `en:${id}`));
   return {
-    has: (id) => ids.has(id),
-    remember: (incoming) => incoming.forEach((id) => ids.add(id)),
+    has: (lang, id) => keys.has(`${lang}:${id}`),
+    remember: (articles) => articles.forEach(({ lang, id }) => keys.add(`${lang}:${id}`)),
   };
 }
 
 /** Mounts the composable in a real component, so lifecycle hooks actually run. */
-function mountFeed(mode = ref<FeedMode>({ kind: "random" }), seen: SeenTracker = makeSeen()) {
+function mountFeed(
+  mode = ref<FeedMode>({ kind: "random" }),
+  lang = ref("en"),
+  seen: SeenTracker = makeSeen(),
+) {
   let feed!: ArticleFeed;
   const Harness = defineComponent({
     setup() {
-      feed = useArticleFeed(mode, { seen });
+      feed = useArticleFeed(mode, lang, { seen });
       return () =>
         h(
           "div",
@@ -104,7 +128,7 @@ function mountFeed(mode = ref<FeedMode>({ kind: "random" }), seen: SeenTracker =
   });
 
   const utils = render(Harness);
-  return { ...utils, feed: () => feed, mode };
+  return { ...utils, feed: () => feed, mode, lang };
 }
 
 describe("useArticleFeed", () => {
@@ -226,7 +250,7 @@ describe("useArticleFeed", () => {
     await vi.waitFor(() => expect(feed().status.value).toBe("ready"), waitOptions);
     const first = feed().articles.value.map((article) => article.id);
 
-    mode.value = { kind: "search", query: "cats" };
+    mode.value = { kind: "search", query: "cats", sort: "relevance" };
 
     await vi.waitFor(() => {
       expect(feed().status.value).toBe("ready");
@@ -235,12 +259,69 @@ describe("useArticleFeed", () => {
   });
 
   /*
+    Switching language must reset the feed even while staying in "random" mode
+    — serializeMode alone can't see the language, so this is the one case where
+    the mode-change watch could silently miss a real change.
+  */
+  it("clears the feed and reloads when only the language changes", async () => {
+    serveArticles();
+    const lang = ref("en");
+    const { feed } = mountFeed(ref<FeedMode>({ kind: "random" }), lang);
+    await vi.waitFor(() => expect(feed().status.value).toBe("ready"), waitOptions);
+    const first = feed().articles.value.map((article) => article.id);
+
+    lang.value = "fr";
+
+    await vi.waitFor(() => {
+      expect(feed().status.value).toBe("ready");
+      expect(feed().articles.value.map((article) => article.id)).not.toEqual(first);
+    }, waitOptions);
+  });
+
+  it("tags loaded articles with the requested language", async () => {
+    serveArticles();
+    const { feed } = mountFeed(ref<FeedMode>({ kind: "random" }), ref("fr"));
+
+    await vi.waitFor(() => expect(feed().status.value).toBe("ready"), waitOptions);
+
+    expect(feed().articles.value.every((a) => a.lang === "fr")).toBe(true);
+  });
+
+  /*
+    serializeMode includes sort specifically so this reloads rather than
+    no-op — but that alone doesn't prove the new sort actually reaches the
+    request. It previously didn't: loadPage's search case built its
+    loadSearchPage call without forwarding current.sort at all, so toggling
+    the control changed the URL and the mode object but the outgoing
+    srsort query param, silently, never moved.
+  */
+  it("requests last-edited-first ordering when sort changes to recent", async () => {
+    serveArticles();
+    let lastSearchUrl: string | undefined;
+    mockRoute("list=search", ({ url }) => {
+      lastSearchUrl = url;
+      return jsonResponse({
+        query: { search: [{ pageid: 1000, title: "Result 0" }] },
+      });
+    });
+
+    const mode = ref<FeedMode>({ kind: "search", query: "cats", sort: "relevance" });
+    const { feed } = mountFeed(mode);
+    await vi.waitFor(() => expect(feed().status.value).toBe("ready"), waitOptions);
+    expect(lastSearchUrl).not.toContain("srsort");
+
+    mode.value = { kind: "search", query: "cats", sort: "recent" };
+
+    await vi.waitFor(() => expect(lastSearchUrl).toContain("srsort=last_edit_desc"), waitOptions);
+  });
+
+  /*
     The recency filter. Articles read in an earlier session are excluded, which
     is what makes a refresh continue rather than re-serve the same page.
   */
   it("skips articles that have already been seen", async () => {
     serveArticles();
-    const { feed } = mountFeed(ref<FeedMode>({ kind: "random" }), makeSeen([1, 2, 3]));
+    const { feed } = mountFeed(ref<FeedMode>({ kind: "random" }), ref("en"), makeSeen([1, 2, 3]));
 
     await vi.waitFor(() => expect(feed().status.value).toBe("ready"), waitOptions);
 
@@ -253,18 +334,18 @@ describe("useArticleFeed", () => {
   it("remembers a page so the next one does not repeat it", async () => {
     serveArticles();
     const seen = makeSeen();
-    const { feed } = mountFeed(ref<FeedMode>({ kind: "random" }), seen);
+    const { feed } = mountFeed(ref<FeedMode>({ kind: "random" }), ref("en"), seen);
 
     await vi.waitFor(() => expect(feed().status.value).toBe("ready"), waitOptions);
 
     for (const article of feed().articles.value) {
-      expect(seen.has(article.id)).toBe(true);
+      expect(seen.has("en", article.id)).toBe(true);
     }
   });
 
   it("loads search results in search mode", async () => {
     serveArticles();
-    const mode = ref<FeedMode>({ kind: "search", query: "cats" });
+    const mode = ref<FeedMode>({ kind: "search", query: "cats", sort: "relevance" });
     const { feed } = mountFeed(mode);
 
     await vi.waitFor(() => expect(feed().status.value).toBe("ready"), waitOptions);
@@ -278,7 +359,7 @@ describe("useArticleFeed", () => {
   */
   it("marks a search exhausted when there are no more results", async () => {
     serveArticles({ searchHits: 2, searchTotal: 2 });
-    const mode = ref<FeedMode>({ kind: "search", query: "cats" });
+    const mode = ref<FeedMode>({ kind: "search", query: "cats", sort: "relevance" });
     const { feed } = mountFeed(mode);
 
     await vi.waitFor(() => expect(feed().more.value).toBe("exhausted"), waitOptions);
@@ -286,7 +367,7 @@ describe("useArticleFeed", () => {
 
   it("reports an empty search rather than an error", async () => {
     serveArticles({ searchHits: 0, searchTotal: 0 });
-    const mode = ref<FeedMode>({ kind: "search", query: "zzzzzz" });
+    const mode = ref<FeedMode>({ kind: "search", query: "zzzzzz", sort: "relevance" });
     const { feed } = mountFeed(mode);
 
     await vi.waitFor(() => expect(feed().status.value).toBe("empty"), waitOptions);
@@ -299,12 +380,26 @@ describe("useArticleFeed", () => {
   */
   it("does not hide search results that were seen before", async () => {
     serveArticles();
-    const mode = ref<FeedMode>({ kind: "search", query: "cats" });
-    const { feed } = mountFeed(mode, makeSeen([1000, 1001, 1002, 1003]));
+    const mode = ref<FeedMode>({ kind: "search", query: "cats", sort: "relevance" });
+    const { feed } = mountFeed(mode, ref("en"), makeSeen([1000, 1001, 1002, 1003]));
 
     await vi.waitFor(() => expect(feed().status.value).toBe("ready"), waitOptions);
 
     expect(feed().articles.value.length).toBeGreaterThan(0);
+  });
+
+  it("loads category members in category mode", async () => {
+    serveArticles();
+    const mode = ref<FeedMode>({ kind: "category", name: "Physics" });
+    const { feed } = mountFeed(mode);
+
+    await vi.waitFor(() => expect(feed().status.value).toBe("ready"), waitOptions);
+
+    expect(
+      feed()
+        .articles.value.map((a) => a.id)
+        .sort(),
+    ).toEqual([3001, 3002]);
   });
 
   it("loads related articles in one request and then stops", async () => {

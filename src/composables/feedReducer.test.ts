@@ -5,6 +5,7 @@ import type { Article } from "../lib/wikipedia/article";
 function article(id: number): Article {
   return {
     id,
+    lang: "en",
     title: `Article ${id}`,
     extract: "",
     thumbnailUrl: null,
@@ -16,7 +17,7 @@ function article(id: number): Article {
 }
 
 function ready(articles = [article(1), article(2)]): FeedState {
-  return feedReducer(initialFeedState({ kind: "random" }), {
+  return feedReducer(initialFeedState({ kind: "random" }, "en"), {
     type: "page/success",
     generation: 0,
     initial: true,
@@ -27,14 +28,23 @@ function ready(articles = [article(1), article(2)]): FeedState {
 describe("serializeMode", () => {
   it("distinguishes every mode", () => {
     expect(serializeMode({ kind: "random" })).toBe("random");
-    expect(serializeMode({ kind: "search", query: "cats" })).toBe("search:cats");
+    expect(serializeMode({ kind: "search", query: "cats", sort: "relevance" })).toBe(
+      "search:relevance:cats",
+    );
     expect(serializeMode({ kind: "related", title: "Cat" })).toBe("related:Cat");
+    expect(serializeMode({ kind: "category", name: "Physics" })).toBe("category:Physics");
+  });
+
+  it("distinguishes a search by its sort order too", () => {
+    expect(serializeMode({ kind: "search", query: "cats", sort: "relevance" })).not.toBe(
+      serializeMode({ kind: "search", query: "cats", sort: "recent" }),
+    );
   });
 });
 
 describe("first page", () => {
   it("starts in loading", () => {
-    expect(initialFeedState({ kind: "random" }).status).toBe("loading");
+    expect(initialFeedState({ kind: "random" }, "en").status).toBe("loading");
   });
 
   it("becomes ready with articles", () => {
@@ -48,7 +58,7 @@ describe("first page", () => {
     representation, so the app rendered its skeleton forever.
   */
   it("becomes an error state when the first load fails", () => {
-    const state = feedReducer(initialFeedState({ kind: "random" }), {
+    const state = feedReducer(initialFeedState({ kind: "random" }, "en"), {
       type: "page/failure",
       generation: 0,
       initial: true,
@@ -60,7 +70,7 @@ describe("first page", () => {
   });
 
   it("distinguishes an empty result from a failure", () => {
-    const state = feedReducer(initialFeedState({ kind: "random" }), {
+    const state = feedReducer(initialFeedState({ kind: "random" }, "en"), {
       type: "page/success",
       generation: 0,
       initial: true,
@@ -72,7 +82,7 @@ describe("first page", () => {
   });
 
   it("clears a previous error when a retry starts", () => {
-    const failed = feedReducer(initialFeedState({ kind: "random" }), {
+    const failed = feedReducer(initialFeedState({ kind: "random" }, "en"), {
       type: "page/failure",
       generation: 0,
       initial: true,
@@ -145,7 +155,8 @@ describe("generations", () => {
   it("ignores a response from a superseded mode", () => {
     const switched = feedReducer(ready(), {
       type: "mode/set",
-      mode: { kind: "search", query: "cats" },
+      mode: { kind: "search", query: "cats", sort: "relevance" },
+      lang: "en",
     });
 
     const stale = feedReducer(switched, {
@@ -162,7 +173,8 @@ describe("generations", () => {
   it("clears the feed and bumps the generation on a mode change", () => {
     const switched = feedReducer(ready(), {
       type: "mode/set",
-      mode: { kind: "search", query: "cats" },
+      mode: { kind: "search", query: "cats", sort: "relevance" },
+      lang: "en",
     });
 
     expect(switched.generation).toBe(1);
@@ -170,9 +182,30 @@ describe("generations", () => {
     expect(switched.status).toBe("loading");
   });
 
-  it("is a no-op when the mode has not actually changed", () => {
+  it("is a no-op when neither the mode nor the language actually changed", () => {
     const state = ready();
-    expect(feedReducer(state, { type: "mode/set", mode: { kind: "random" } })).toBe(state);
+    expect(feedReducer(state, { type: "mode/set", mode: { kind: "random" }, lang: "en" })).toBe(
+      state,
+    );
+  });
+
+  /*
+    A language switch must reset the feed even while the mode's own kind stays
+    "random" — serializeMode alone can't see the language, so the guard has to
+    check it separately or a switch to French would silently do nothing.
+  */
+  it("resets on a language change even when the mode kind is unchanged", () => {
+    const state = ready();
+    const switched = feedReducer(state, {
+      type: "mode/set",
+      mode: { kind: "random" },
+      lang: "fr",
+    });
+
+    expect(switched).not.toBe(state);
+    expect(switched.generation).toBe(1);
+    expect(switched.lang).toBe("fr");
+    expect(switched.articles).toHaveLength(0);
   });
 });
 
@@ -185,7 +218,7 @@ describe("activeIndex", () => {
   });
 
   it("stays at zero for an empty feed", () => {
-    const empty = initialFeedState({ kind: "random" });
+    const empty = initialFeedState({ kind: "random" }, "en");
     expect(feedReducer(empty, { type: "activeIndex/set", index: 4 }).activeIndex).toBe(0);
   });
 });

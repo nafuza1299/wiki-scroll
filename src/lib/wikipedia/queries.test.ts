@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  categoryMembersUrl,
   createdDateUrl,
   openSearchUrl,
   pageviews30dUrl,
@@ -11,24 +12,34 @@ import {
 
 describe("randomSummaryUrl", () => {
   it("points at the REST random summary endpoint", () => {
-    expect(randomSummaryUrl()).toBe("https://en.wikipedia.org/api/rest_v1/page/random/summary");
+    expect(randomSummaryUrl("en")).toBe("https://en.wikipedia.org/api/rest_v1/page/random/summary");
+  });
+
+  it("builds the host from the language, not just en", () => {
+    expect(randomSummaryUrl("fr")).toBe("https://fr.wikipedia.org/api/rest_v1/page/random/summary");
   });
 });
 
 describe("summaryUrl", () => {
   it("underscores spaces and encodes the rest", () => {
-    expect(summaryUrl("Marie Curie")).toBe(
+    expect(summaryUrl("en", "Marie Curie")).toBe(
       "https://en.wikipedia.org/api/rest_v1/page/summary/Marie_Curie",
     );
   });
 
   it("encodes characters that would otherwise break the path", () => {
-    expect(summaryUrl("AC/DC")).toContain("AC%2FDC");
-    expect(summaryUrl("Foo & Bar")).toContain("Foo_%26_Bar");
+    expect(summaryUrl("en", "AC/DC")).toContain("AC%2FDC");
+    expect(summaryUrl("en", "Foo & Bar")).toContain("Foo_%26_Bar");
   });
 
   it("survives non-ASCII titles", () => {
-    expect(summaryUrl("Café")).toContain(encodeURIComponent("Café"));
+    expect(summaryUrl("en", "Café")).toContain(encodeURIComponent("Café"));
+  });
+
+  it("uses the requested language's host", () => {
+    expect(summaryUrl("de", "Katze")).toBe(
+      "https://de.wikipedia.org/api/rest_v1/page/summary/Katze",
+    );
   });
 });
 
@@ -39,31 +50,37 @@ describe("summaryUrl", () => {
 */
 describe("pageviews30dUrl", () => {
   it("requests the 30 days ending yesterday", () => {
-    const url = pageviews30dUrl("Marie Curie", new Date("2026-03-15T12:00:00Z"));
+    const url = pageviews30dUrl("en", "Marie Curie", new Date("2026-03-15T12:00:00Z"));
 
     expect(url).toContain("/daily/20260213/20260314");
   });
 
   it("spans month and year boundaries correctly", () => {
-    expect(pageviews30dUrl("X", new Date("2026-01-05T00:00:00Z"))).toContain(
+    expect(pageviews30dUrl("en", "X", new Date("2026-01-05T00:00:00Z"))).toContain(
       "/daily/20251206/20260104",
     );
   });
 
   it("handles a leap day in the window", () => {
-    expect(pageviews30dUrl("X", new Date("2028-03-05T00:00:00Z"))).toContain(
+    expect(pageviews30dUrl("en", "X", new Date("2028-03-05T00:00:00Z"))).toContain(
       "/daily/20280204/20280304",
     );
   });
 
   it("underscores and encodes the title", () => {
-    expect(pageviews30dUrl("AC/DC", new Date("2026-03-15T00:00:00Z"))).toContain("AC%2FDC");
+    expect(pageviews30dUrl("en", "AC/DC", new Date("2026-03-15T00:00:00Z"))).toContain("AC%2FDC");
+  });
+
+  it("puts the language into the project path segment", () => {
+    expect(pageviews30dUrl("fr", "Chat", new Date("2026-03-15T00:00:00Z"))).toContain(
+      "/pageviews/per-article/fr.wikipedia/",
+    );
   });
 });
 
 describe("searchUrl", () => {
   it("asks the Action API for article-namespace titles with CORS enabled", () => {
-    const params = new URL(searchUrl("cats", 10)).searchParams;
+    const params = new URL(searchUrl("en", "cats", 10)).searchParams;
 
     expect(params.get("list")).toBe("search");
     expect(params.get("srsearch")).toBe("cats");
@@ -73,41 +90,86 @@ describe("searchUrl", () => {
   });
 
   it("carries the pagination offset", () => {
-    expect(new URL(searchUrl("cats", 10, 30)).searchParams.get("sroffset")).toBe("30");
+    expect(new URL(searchUrl("en", "cats", 10, 30)).searchParams.get("sroffset")).toBe("30");
   });
 
   it("escapes a query that would otherwise break the query string", () => {
-    const params = new URL(searchUrl("a&b=c", 10)).searchParams;
+    const params = new URL(searchUrl("en", "a&b=c", 10)).searchParams;
     expect(params.get("srsearch")).toBe("a&b=c");
+  });
+
+  it("uses the requested language's host", () => {
+    expect(new URL(searchUrl("ja", "cats", 10)).origin).toBe("https://ja.wikipedia.org");
+  });
+
+  it("omits srsort for the default relevance order", () => {
+    expect(new URL(searchUrl("en", "cats", 10)).searchParams.has("srsort")).toBe(false);
+  });
+
+  it("sets srsort=last_edit_desc when sorting by recency", () => {
+    const params = new URL(searchUrl("en", "cats", 10, 0, "recent")).searchParams;
+    expect(params.get("srsort")).toBe("last_edit_desc");
   });
 });
 
 describe("relatedUrl", () => {
   it("points at the REST related endpoint with an underscored title", () => {
-    expect(relatedUrl("Marie Curie")).toBe(
+    expect(relatedUrl("en", "Marie Curie")).toBe(
       "https://en.wikipedia.org/api/rest_v1/page/related/Marie_Curie",
     );
   });
 
   it("encodes a slash in the title", () => {
-    expect(relatedUrl("AC/DC")).toContain("AC%2FDC");
+    expect(relatedUrl("en", "AC/DC")).toContain("AC%2FDC");
   });
 });
 
 describe("openSearchUrl", () => {
   it("asks for article-namespace suggestions", () => {
-    const params = new URL(openSearchUrl("mar")).searchParams;
+    const params = new URL(openSearchUrl("en", "mar")).searchParams;
 
     expect(params.get("action")).toBe("opensearch");
     expect(params.get("search")).toBe("mar");
     expect(params.get("namespace")).toBe("0");
     expect(params.get("origin")).toBe("*");
   });
+
+  it("sends the requested suggestion limit", () => {
+    expect(new URL(openSearchUrl("en", "mar", 5)).searchParams.get("limit")).toBe("5");
+  });
+});
+
+describe("categoryMembersUrl", () => {
+  it("asks for pages in the given category, prefixed as MediaWiki expects", () => {
+    const params = new URL(categoryMembersUrl("en", "Physics", 10)).searchParams;
+
+    expect(params.get("generator")).toBe("categorymembers");
+    expect(params.get("gcmtitle")).toBe("Category:Physics");
+    expect(params.get("gcmtype")).toBe("page");
+    expect(params.get("gcmnamespace")).toBe("0");
+    expect(params.get("gcmlimit")).toBe("10");
+    expect(params.get("origin")).toBe("*");
+  });
+
+  it("omits gcmcontinue on the first page", () => {
+    expect(new URL(categoryMembersUrl("en", "Physics", 10)).searchParams.has("gcmcontinue")).toBe(
+      false,
+    );
+  });
+
+  it("passes an opaque continuation cursor through unchanged", () => {
+    const params = new URL(categoryMembersUrl("en", "Physics", 10, "abc|123")).searchParams;
+    expect(params.get("gcmcontinue")).toBe("abc|123");
+  });
+
+  it("uses the requested language's host", () => {
+    expect(new URL(categoryMembersUrl("de", "Physik", 10)).origin).toBe("https://de.wikipedia.org");
+  });
 });
 
 describe("createdDateUrl", () => {
   it("asks for the single oldest revision with CORS enabled", () => {
-    const url = new URL(createdDateUrl("Marie Curie"));
+    const url = new URL(createdDateUrl("en", "Marie Curie"));
     const params = url.searchParams;
 
     expect(url.origin + url.pathname).toBe("https://en.wikipedia.org/w/api.php");
@@ -120,7 +182,7 @@ describe("createdDateUrl", () => {
   });
 
   it("escapes a title containing an ampersand", () => {
-    const params = new URL(createdDateUrl("Foo & Bar")).searchParams;
+    const params = new URL(createdDateUrl("en", "Foo & Bar")).searchParams;
     expect(params.get("titles")).toBe("Foo & Bar");
   });
 });

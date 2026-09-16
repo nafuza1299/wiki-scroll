@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   enrichArticle,
+  loadCategoryPage,
   loadRandomPage,
   loadRelatedPage,
   loadSearchPage,
@@ -39,10 +40,26 @@ describe("loadRandomPage", () => {
   it("returns a full page of distinct articles", async () => {
     serveRandomSequence(Array.from({ length: 20 }, (_, i) => summary(i + 1)));
 
-    const page = await loadRandomPage({ size: 5, signal: new AbortController().signal });
+    const page = await loadRandomPage({
+      lang: "en",
+      size: 5,
+      signal: new AbortController().signal,
+    });
 
     expect(page.articles).toHaveLength(5);
     expect(new Set(page.articles.map((a) => a.id)).size).toBe(5);
+  });
+
+  it("tags every article with the requested language", async () => {
+    serveRandomSequence(Array.from({ length: 20 }, (_, i) => summary(i + 1)));
+
+    const page = await loadRandomPage({
+      lang: "fr",
+      size: 3,
+      signal: new AbortController().signal,
+    });
+
+    expect(page.articles.every((a) => a.lang === "fr")).toBe(true);
   });
 
   /*
@@ -62,7 +79,11 @@ describe("loadRandomPage", () => {
       summary(6),
     ]);
 
-    const page = await loadRandomPage({ size: 4, signal: new AbortController().signal });
+    const page = await loadRandomPage({
+      lang: "en",
+      size: 4,
+      signal: new AbortController().signal,
+    });
 
     expect(page.articles.length).toBeGreaterThan(0);
   });
@@ -76,7 +97,11 @@ describe("loadRandomPage", () => {
       summary(5),
     ]);
 
-    const page = await loadRandomPage({ size: 2, signal: new AbortController().signal });
+    const page = await loadRandomPage({
+      lang: "en",
+      size: 2,
+      signal: new AbortController().signal,
+    });
 
     expect(page.articles.every((a) => a.id >= 3)).toBe(true);
     expect(page.discarded).toBeGreaterThan(0);
@@ -86,6 +111,7 @@ describe("loadRandomPage", () => {
     serveRandomSequence([summary(1), summary(1), summary(2), summary(3), summary(4), summary(5)]);
 
     const page = await loadRandomPage({
+      lang: "en",
       size: 3,
       signal: new AbortController().signal,
       exclude: (id) => id === 1,
@@ -97,23 +123,23 @@ describe("loadRandomPage", () => {
   it("throws only when nothing at all could be loaded", async () => {
     serveRandomSequence(["reject"]);
 
-    await expect(loadRandomPage({ size: 3, signal: new AbortController().signal })).rejects.toThrow(
-      /Could not reach Wikipedia/,
-    );
+    await expect(
+      loadRandomPage({ lang: "en", size: 3, signal: new AbortController().signal }),
+    ).rejects.toThrow(/Could not reach Wikipedia/);
   });
 
   it("throws when every draw was unusable", async () => {
     serveRandomSequence([summary(1, { type: "disambiguation" })]);
 
-    await expect(loadRandomPage({ size: 3, signal: new AbortController().signal })).rejects.toThrow(
-      /no usable articles/,
-    );
+    await expect(
+      loadRandomPage({ lang: "en", size: 3, signal: new AbortController().signal }),
+    ).rejects.toThrow(/no usable articles/);
   });
 
   it("does not share one random result across the batch", async () => {
     serveRandomSequence(Array.from({ length: 20 }, (_, i) => summary(i + 1)));
 
-    await loadRandomPage({ size: 4, signal: new AbortController().signal });
+    await loadRandomPage({ lang: "en", size: 4, signal: new AbortController().signal });
 
     // Over-fetches on purpose so filtering still yields a full page.
     expect(fetchCalls().length).toBeGreaterThanOrEqual(4);
@@ -138,6 +164,7 @@ describe("loadSearchPage", () => {
     serveSearch(["Cat", "Dog"]);
 
     const page = await loadSearchPage({
+      lang: "en",
       query: "pets",
       size: 10,
       offset: 0,
@@ -147,10 +174,25 @@ describe("loadSearchPage", () => {
     expect(page.articles.map((a) => a.title)).toEqual(["Cat", "Dog"]);
   });
 
+  it("tags every resolved article with the requested language", async () => {
+    serveSearch(["Cat"]);
+
+    const page = await loadSearchPage({
+      lang: "fr",
+      query: "pets",
+      size: 10,
+      offset: 0,
+      signal: new AbortController().signal,
+    });
+
+    expect(page.articles.every((a) => a.lang === "fr")).toBe(true);
+  });
+
   it("reports exhaustion when the API offers no continuation", async () => {
     serveSearch(["Cat"]);
 
     const page = await loadSearchPage({
+      lang: "en",
       query: "pets",
       size: 10,
       offset: 0,
@@ -165,6 +207,7 @@ describe("loadSearchPage", () => {
     serveSearch(["Cat"], 10);
 
     const page = await loadSearchPage({
+      lang: "en",
       query: "pets",
       size: 10,
       offset: 0,
@@ -183,6 +226,7 @@ describe("loadSearchPage", () => {
     mockRoute("list=search", () => jsonResponse({ query: { search: [] } }));
 
     const page = await loadSearchPage({
+      lang: "en",
       query: "zzzz",
       size: 10,
       offset: 0,
@@ -209,6 +253,7 @@ describe("loadSearchPage", () => {
     );
 
     const page = await loadSearchPage({
+      lang: "en",
       query: "x",
       size: 10,
       offset: 0,
@@ -217,6 +262,45 @@ describe("loadSearchPage", () => {
 
     expect(page.articles.map((a) => a.title)).toEqual(["Good"]);
   });
+
+  it("requests last-edited-first ordering when sort is recent", async () => {
+    serveSearch(["Cat"]);
+    let requestedUrl: string | undefined;
+    mockRoute("list=search", ({ url }) => {
+      requestedUrl = url;
+      return jsonResponse({ query: { search: [{ pageid: 100, title: "Cat" }] } });
+    });
+
+    await loadSearchPage({
+      lang: "en",
+      query: "pets",
+      size: 10,
+      offset: 0,
+      sort: "recent",
+      signal: new AbortController().signal,
+    });
+
+    expect(requestedUrl).toContain("srsort=last_edit_desc");
+  });
+
+  it("omits srsort when sort is left at its default", async () => {
+    serveSearch(["Cat"]);
+    let requestedUrl: string | undefined;
+    mockRoute("list=search", ({ url }) => {
+      requestedUrl = url;
+      return jsonResponse({ query: { search: [{ pageid: 100, title: "Cat" }] } });
+    });
+
+    await loadSearchPage({
+      lang: "en",
+      query: "pets",
+      size: 10,
+      offset: 0,
+      signal: new AbortController().signal,
+    });
+
+    expect(requestedUrl).not.toContain("srsort");
+  });
 });
 
 describe("loadRelatedPage", () => {
@@ -224,6 +308,7 @@ describe("loadRelatedPage", () => {
     mockRoute("/page/related/", () => jsonResponse({ pages: [summary(1), summary(2)] }));
 
     const page = await loadRelatedPage({
+      lang: "en",
       title: "Cat",
       size: 10,
       signal: new AbortController().signal,
@@ -233,10 +318,24 @@ describe("loadRelatedPage", () => {
     expect(page.exhausted).toBe(true);
   });
 
+  it("tags every related article with the requested language", async () => {
+    mockRoute("/page/related/", () => jsonResponse({ pages: [summary(1)] }));
+
+    const page = await loadRelatedPage({
+      lang: "de",
+      title: "Katze",
+      size: 10,
+      signal: new AbortController().signal,
+    });
+
+    expect(page.articles.every((a) => a.lang === "de")).toBe(true);
+  });
+
   it("survives a response with no related pages", async () => {
     mockRoute("/page/related/", () => jsonResponse({}));
 
     const page = await loadRelatedPage({
+      lang: "en",
       title: "Cat",
       size: 10,
       signal: new AbortController().signal,
@@ -246,13 +345,131 @@ describe("loadRelatedPage", () => {
   });
 });
 
+describe("loadCategoryPage", () => {
+  function serveCategory(titles: string[], gcmcontinue?: string): void {
+    mockRoute("generator=categorymembers", () =>
+      jsonResponse({
+        query: {
+          pages: Object.fromEntries(
+            titles.map((title, i) => [String(200 + i), { pageid: 200 + i, title }]),
+          ),
+        },
+        ...(gcmcontinue === undefined ? {} : { continue: { gcmcontinue } }),
+      }),
+    );
+    mockRoute("/page/summary/", ({ url }) => {
+      const title = decodeURIComponent(url.split("/page/summary/")[1] ?? "");
+      return jsonResponse({ ...summary(200 + titles.indexOf(title.replace(/_/g, " "))), title });
+    });
+  }
+
+  it("resolves category members to full articles", async () => {
+    serveCategory(["Electron", "Proton"]);
+
+    const page = await loadCategoryPage({
+      lang: "en",
+      name: "Physics",
+      size: 10,
+      cursor: undefined,
+      signal: new AbortController().signal,
+    });
+
+    expect(page.articles.map((a) => a.title).sort()).toEqual(["Electron", "Proton"]);
+  });
+
+  it("returns an empty, exhausted page for a category with no members", async () => {
+    mockRoute("generator=categorymembers", () => jsonResponse({ query: { pages: {} } }));
+
+    const page = await loadCategoryPage({
+      lang: "en",
+      name: "Nonexistent",
+      size: 10,
+      cursor: undefined,
+      signal: new AbortController().signal,
+    });
+
+    expect(page.articles).toEqual([]);
+    expect(page.exhausted).toBe(true);
+  });
+
+  it("passes the continuation cursor through untouched", async () => {
+    serveCategory(["Electron"], "20260101000000|201");
+
+    const page = await loadCategoryPage({
+      lang: "en",
+      name: "Physics",
+      size: 10,
+      cursor: undefined,
+      signal: new AbortController().signal,
+    });
+
+    expect(page.exhausted).toBe(false);
+    expect(page.nextCursor).toBe("20260101000000|201");
+  });
+
+  it("reports exhaustion when the API offers no continuation", async () => {
+    serveCategory(["Electron"]);
+
+    const page = await loadCategoryPage({
+      lang: "en",
+      name: "Physics",
+      size: 10,
+      cursor: undefined,
+      signal: new AbortController().signal,
+    });
+
+    expect(page.exhausted).toBe(true);
+    expect(page.nextCursor).toBeUndefined();
+  });
+
+  it("keeps the members whose summaries resolved", async () => {
+    mockRoute("generator=categorymembers", () =>
+      jsonResponse({
+        query: {
+          pages: {
+            "1": { pageid: 1, title: "Good" },
+            "2": { pageid: 2, title: "Bad" },
+          },
+        },
+      }),
+    );
+    mockRoute("/page/summary/", ({ url }) =>
+      url.includes("Bad") ? errorResponse(404) : jsonResponse({ ...summary(1), title: "Good" }),
+    );
+
+    const page = await loadCategoryPage({
+      lang: "en",
+      name: "Physics",
+      size: 10,
+      cursor: undefined,
+      signal: new AbortController().signal,
+    });
+
+    expect(page.articles.map((a) => a.title)).toEqual(["Good"]);
+  });
+
+  it("tags every resolved article with the requested language", async () => {
+    serveCategory(["Elektron"]);
+
+    const page = await loadCategoryPage({
+      lang: "de",
+      name: "Physik",
+      size: 10,
+      cursor: undefined,
+      signal: new AbortController().signal,
+    });
+
+    expect(page.articles.every((a) => a.lang === "de")).toBe(true);
+  });
+});
+
 describe("suggestTitles", () => {
   it("reads titles out of the positional opensearch response", async () => {
     mockRoute("action=opensearch", () =>
       jsonResponse(["mar", ["Marie Curie", "Mars"], ["", ""], ["", ""]]),
     );
 
-    await expect(suggestTitles("mar", new AbortController().signal)).resolves.toEqual([
+    await expect(suggestTitles("en", "mar", new AbortController().signal)).resolves.toEqual([
       "Marie Curie",
       "Mars",
     ]);
@@ -265,13 +482,13 @@ describe("suggestTitles", () => {
   it("returns nothing rather than throwing when the request fails", async () => {
     mockRoute("action=opensearch", () => errorResponse(500));
 
-    await expect(suggestTitles("mar", new AbortController().signal)).resolves.toEqual([]);
+    await expect(suggestTitles("en", "mar", new AbortController().signal)).resolves.toEqual([]);
   });
 
   it("tolerates an unexpected response shape", async () => {
     mockRoute("action=opensearch", () => jsonResponse({ not: "an array" }));
 
-    await expect(suggestTitles("mar", new AbortController().signal)).resolves.toEqual([]);
+    await expect(suggestTitles("en", "mar", new AbortController().signal)).resolves.toEqual([]);
   });
 });
 
@@ -284,10 +501,12 @@ describe("enrichArticle", () => {
       }),
     );
 
-    await expect(enrichArticle("Marie Curie", new AbortController().signal)).resolves.toEqual({
-      viewCount30d: 7,
-      createdAt: "2010-05-01T00:00:00Z",
-    });
+    await expect(enrichArticle("en", "Marie Curie", new AbortController().signal)).resolves.toEqual(
+      {
+        viewCount30d: 7,
+        createdAt: "2010-05-01T00:00:00Z",
+      },
+    );
   });
 
   /*
@@ -299,19 +518,23 @@ describe("enrichArticle", () => {
     mockRoute("/metrics/pageviews", () => errorResponse(404));
     mockRoute("prop=revisions", () => errorResponse(500));
 
-    await expect(enrichArticle("Marie Curie", new AbortController().signal)).resolves.toEqual({
-      viewCount30d: null,
-      createdAt: null,
-    });
+    await expect(enrichArticle("en", "Marie Curie", new AbortController().signal)).resolves.toEqual(
+      {
+        viewCount30d: null,
+        createdAt: null,
+      },
+    );
   });
 
   it("keeps whichever extra succeeded", async () => {
     mockRoute("/metrics/pageviews", () => jsonResponse({ items: [{ views: 9 }] }));
     mockRoute("prop=revisions", () => errorResponse(500));
 
-    await expect(enrichArticle("Marie Curie", new AbortController().signal)).resolves.toEqual({
-      viewCount30d: 9,
-      createdAt: null,
-    });
+    await expect(enrichArticle("en", "Marie Curie", new AbortController().signal)).resolves.toEqual(
+      {
+        viewCount30d: 9,
+        createdAt: null,
+      },
+    );
   });
 });

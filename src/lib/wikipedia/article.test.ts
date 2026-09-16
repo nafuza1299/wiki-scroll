@@ -43,8 +43,9 @@ describe("truncateExtract", () => {
 
 describe("toArticle", () => {
   it("narrows a well-formed summary", () => {
-    expect(toArticle(summary)).toEqual({
+    expect(toArticle(summary, "en")).toEqual({
       id: 42,
+      lang: "en",
       title: "Test Article",
       extract: "An extract.",
       thumbnailUrl: "https://example.com/thumb.jpg",
@@ -55,18 +56,22 @@ describe("toArticle", () => {
     });
   });
 
+  it("carries whichever language it was fetched for, not a hardcoded one", () => {
+    expect(toArticle(summary, "fr")?.lang).toBe("fr");
+  });
+
   it("nulls the thumbnail when there is none", () => {
-    expect(toArticle({ ...summary, thumbnail: undefined })?.thumbnailUrl).toBeNull();
+    expect(toArticle({ ...summary, thumbnail: undefined }, "en")?.thumbnailUrl).toBeNull();
   });
 
   it("treats a missing extract as empty rather than failing", () => {
-    expect(toArticle({ ...summary, extract: undefined })?.extract).toBe("");
+    expect(toArticle({ ...summary, extract: undefined }, "en")?.extract).toBe("");
   });
 
   it("rejects disambiguation pages and other non-standard types", () => {
-    expect(toArticle({ ...summary, type: "disambiguation" })).toBeNull();
-    expect(toArticle({ ...summary, type: "no-extract" })).toBeNull();
-    expect(toArticle({ ...summary, type: "mainpage" })).toBeNull();
+    expect(toArticle({ ...summary, type: "disambiguation" }, "en")).toBeNull();
+    expect(toArticle({ ...summary, type: "no-extract" }, "en")).toBeNull();
+    expect(toArticle({ ...summary, type: "mainpage" }, "en")).toBeNull();
   });
 
   /*
@@ -76,15 +81,15 @@ describe("toArticle", () => {
     luck rather than a bug.
   */
   it("returns null instead of throwing on a malformed payload", () => {
-    expect(toArticle({ ...summary, content_urls: undefined })).toBeNull();
-    expect(toArticle({ ...summary, content_urls: { desktop: {} } })).toBeNull();
-    expect(toArticle({ ...summary, pageid: undefined })).toBeNull();
-    expect(toArticle({ ...summary, title: undefined })).toBeNull();
-    expect(toArticle({})).toBeNull();
+    expect(toArticle({ ...summary, content_urls: undefined }, "en")).toBeNull();
+    expect(toArticle({ ...summary, content_urls: { desktop: {} } }, "en")).toBeNull();
+    expect(toArticle({ ...summary, pageid: undefined }, "en")).toBeNull();
+    expect(toArticle({ ...summary, title: undefined }, "en")).toBeNull();
+    expect(toArticle({}, "en")).toBeNull();
   });
 
   it("keeps lastEdited nullable rather than inventing a date", () => {
-    expect(toArticle({ ...summary, timestamp: undefined })?.lastEdited).toBeNull();
+    expect(toArticle({ ...summary, timestamp: undefined }, "en")?.lastEdited).toBeNull();
   });
 });
 

@@ -3,6 +3,7 @@ import { computed, onErrorCaptured, ref } from "vue";
 import ArticleCard from "./components/ArticleCard/ArticleCard.vue";
 import ArticleReader from "./components/ArticleReader/ArticleReader.vue";
 import Button from "./components/Button/Button.vue";
+import LanguagePicker from "./components/LanguagePicker/LanguagePicker.vue";
 import { Modal } from "./components/Modal/Modal";
 import Notice from "./components/Notice/Notice.vue";
 import SearchBar from "./components/SearchBar/SearchBar.vue";
@@ -31,32 +32,76 @@ history.scrollRestoration = "manual";
 const { route, navigate, canGoBack, back } = useAppRoute();
 
 const view = computed(() => route.value.view);
-const query = computed(() => route.value.query);
+const lang = computed(() => route.value.lang);
+const sort = computed(() => route.value.sort);
 
 const mode = computed<FeedMode>(() => {
+  if (route.value.query)
+    return { kind: "search", query: route.value.query, sort: route.value.sort };
+  if (route.value.category) return { kind: "category", name: route.value.category };
   if (route.value.related) return { kind: "related", title: route.value.related };
-  if (route.value.query) return { kind: "search", query: route.value.query };
   return { kind: "random" };
 });
 
+/*
+  The search box keeps showing what was typed while a category seed is active,
+  unlike `related` mode (entered by a button, never reflected in the box).
+  route.value.query is cleared when a Category: seed is set, so this is what
+  makes "Category:Physics" still visible for editing rather than the field
+  going blank the instant it takes effect.
+*/
+const searchBoxValue = computed(() =>
+  route.value.category ? `Category:${route.value.category}` : route.value.query,
+);
+
+const CATEGORY_PREFIX = /^category:/i;
+
 function search(next: string): void {
-  navigate({ ...route.value, query: next, related: null, article: null }, { replace: true });
+  const trimmed = next.trim();
+  const match = CATEGORY_PREFIX.exec(trimmed);
+  if (match) {
+    const name = trimmed.slice(match[0].length).trim();
+    navigate(
+      { ...route.value, query: "", category: name || null, related: null, article: null },
+      { replace: true },
+    );
+    return;
+  }
+  navigate(
+    { ...route.value, query: next, category: null, related: null, article: null },
+    { replace: true },
+  );
 }
 
 function showRelatedTo(title: string): void {
-  navigate({ ...defaultRoute, related: title });
+  navigate({ ...defaultRoute, lang: route.value.lang, related: title });
 }
 
 function backToRandom(): void {
-  navigate({ ...route.value, query: "", related: null });
+  navigate({ ...route.value, query: "", category: null, related: null });
 }
 
 function toggleView(): void {
   navigate({ ...route.value, view: view.value === "saved" ? "feed" : "saved", article: null });
 }
 
-const { articles, status, more, error, retry, step, activeArticle, registerCard } =
-  useArticleFeed(mode);
+// No replace: true here — a language switch is a deliberate, occasional
+// choice like toggleView, not per-keystroke typing like search, so it earns
+// its own history entry and Back undoes it.
+function setLang(next: string): void {
+  navigate({ ...route.value, lang: next });
+}
+
+// replace: true, matching search() — a live refinement of the same results,
+// not a new navigation to a different place.
+function setSort(next: "relevance" | "recent"): void {
+  navigate({ ...route.value, sort: next }, { replace: true });
+}
+
+const { articles, status, more, error, retry, step, activeArticle, registerCard } = useArticleFeed(
+  mode,
+  lang,
+);
 const { saved, count: savedCount, isSaved, toggle, clear: clearSaved } = useSavedArticles();
 const { count: seenCount, clear: clearSeen } = useSeenArticles();
 
@@ -85,10 +130,11 @@ const openArticleData = computed<Article | null>(() => {
   return (
     known ?? {
       id: -1,
+      lang: route.value.lang,
       title,
       extract: "",
       thumbnailUrl: null,
-      pageUrl: `https://en.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g, "_"))}`,
+      pageUrl: `https://${route.value.lang}.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g, "_"))}`,
       createdAt: null,
       lastEdited: null,
       viewCount30d: null,
@@ -115,7 +161,7 @@ async function share(article: Article): Promise<void> {
   // The app's own link, not Wikipedia's — sharing the reader is the point.
   const result = await shareArticle({
     title: article.title,
-    url: articleShareUrl(article.title),
+    url: articleShareUrl(article.title, article.lang),
   });
   if (result === "copied") shareNotice.value = "Link copied";
   else if (result === "failed") shareNotice.value = "Couldn't share that link";
@@ -176,6 +222,7 @@ function reload(): void {
           >
             ?
           </Button>
+          <LanguagePicker :model-value="lang" @update:model-value="setLang" />
           <ThemeToggle />
         </div>
       </header>
@@ -222,7 +269,15 @@ function reload(): void {
       </main>
 
       <main v-else class="flex flex-col gap-3">
-        <SearchBar ref="searchBar" :model-value="query" @update:model-value="search" />
+        <SearchBar
+          ref="searchBar"
+          :model-value="searchBoxValue"
+          :lang="lang"
+          :sort="sort"
+          :show-sort="mode.kind === 'search'"
+          @update:model-value="search"
+          @update:sort="setSort"
+        />
 
         <!-- Says what the feed is currently showing, and how to leave it. -->
         <div
@@ -231,7 +286,11 @@ function reload(): void {
         >
           <span class="min-w-0 truncate">
             {{
-              mode.kind === "search" ? `Results for “${mode.query}”` : `Similar to ${mode.title}`
+              mode.kind === "search"
+                ? `Results for “${mode.query}”`
+                : mode.kind === "category"
+                  ? `Category: ${mode.name}`
+                  : `Similar to ${mode.title}`
             }}
           </span>
           <Button variant="ghost" size="sm" class="shrink-0" @click="backToRandom">
@@ -261,11 +320,15 @@ function reload(): void {
 
         <Notice
           v-else-if="status === 'empty'"
-          :title="mode.kind === 'search' ? 'No matches' : 'Nothing to show'"
+          :title="
+            mode.kind === 'search' || mode.kind === 'category' ? 'No matches' : 'Nothing to show'
+          "
           :message="
             mode.kind === 'search'
               ? 'Try a different search.'
-              : 'Wikipedia returned no articles we could display.'
+              : mode.kind === 'category'
+                ? 'That category may not exist, or has no articles.'
+                : 'Wikipedia returned no articles we could display.'
           "
         >
           <Button variant="secondary" @click="mode.kind === 'random' ? retry() : backToRandom()">
@@ -280,7 +343,7 @@ function reload(): void {
             :ref="registerCard(index)"
             :article="article"
             :index="index"
-            :saved="isSaved(article.id)"
+            :saved="isSaved(article.lang, article.id)"
             @open="openArticle(article)"
             @toggle-save="toggle(article)"
             @share="share(article)"
@@ -353,6 +416,7 @@ function reload(): void {
             :title="openArticleData.title"
             :page-url="openArticleData.pageUrl"
             :preview="openArticleData.extract"
+            :lang="openArticleData.lang"
             @navigate="openByTitle"
           />
         </Modal.Body>

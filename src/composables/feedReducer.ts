@@ -10,7 +10,10 @@ import type { Article } from "../lib/wikipedia/article";
 */
 
 export type FeedMode =
-  { kind: "random" } | { kind: "search"; query: string } | { kind: "related"; title: string };
+  | { kind: "random" }
+  | { kind: "search"; query: string; sort: "relevance" | "recent" }
+  | { kind: "related"; title: string }
+  | { kind: "category"; name: string };
 
 /** First-page status. `empty` is a success with nothing in it, not a failure. */
 export type FeedStatus = "loading" | "ready" | "empty" | "error";
@@ -20,7 +23,12 @@ export type MoreStatus = "idle" | "loading" | "error" | "exhausted";
 
 export interface FeedState {
   mode: FeedMode;
-  /** Bumped on every mode change; actions from an older generation are ignored. */
+  /** Which wiki the current batch came from. Part of identity, not content:
+   *  changing it must reset the feed exactly like a mode change does, even
+   *  when the mode's own kind stays "random". */
+  lang: string;
+  /** Bumped on every mode or language change; actions from an older
+   *  generation are ignored. */
   generation: number;
   articles: Article[];
   status: FeedStatus;
@@ -30,7 +38,7 @@ export interface FeedState {
 }
 
 export type FeedAction =
-  | { type: "mode/set"; mode: FeedMode }
+  | { type: "mode/set"; mode: FeedMode; lang: string }
   | { type: "page/start"; generation: number; initial: boolean }
   | {
       type: "page/success";
@@ -47,17 +55,20 @@ export type FeedAction =
 export function serializeMode(mode: FeedMode): string {
   switch (mode.kind) {
     case "search":
-      return `search:${mode.query}`;
+      return `search:${mode.sort}:${mode.query}`;
     case "related":
       return `related:${mode.title}`;
+    case "category":
+      return `category:${mode.name}`;
     default:
       return "random";
   }
 }
 
-export function initialFeedState(mode: FeedMode): FeedState {
+export function initialFeedState(mode: FeedMode, lang: string): FeedState {
   return {
     mode,
+    lang,
     generation: 0,
     articles: [],
     status: "loading",
@@ -89,9 +100,14 @@ export function feedReducer(state: FeedState, action: FeedAction): FeedState {
 
   switch (action.type) {
     case "mode/set": {
-      if (serializeMode(action.mode) === serializeMode(state.mode)) return state;
+      // A language change must reset the feed even when the mode's own kind is
+      // unchanged (e.g. still "random") — serializeMode alone can't see that,
+      // since it has no idea which wiki a mode is pointed at.
+      if (action.lang === state.lang && serializeMode(action.mode) === serializeMode(state.mode)) {
+        return state;
+      }
       return {
-        ...initialFeedState(action.mode),
+        ...initialFeedState(action.mode, action.lang),
         generation: state.generation + 1,
       };
     }
