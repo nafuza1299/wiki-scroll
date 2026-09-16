@@ -27,6 +27,7 @@ npm test               # vitest
 npm run test:watch     # the inner loop
 npm run test:coverage  # vitest --coverage
 npm run test:e2e       # playwright, against a real browser — see "Testing" below
+npm run test:e2e:ui    # same, with Playwright's UI runner for debugging
 npm run typecheck      # vue-tsc, includes test files
 npm run lint           # eslint
 npm run format         # prettier --write
@@ -37,19 +38,46 @@ Node 22 (`.nvmrc`); CI reads the same file.
 
 ## Testing
 
-Two suites, deliberately different in kind rather than overlapping:
+Two suites, deliberately different in kind rather than overlapping.
 
-- **Vitest** (`src/**/*.test.ts`) — components, composables, and the
-  Wikimedia API boundary, in jsdom. jsdom has no `IntersectionObserver`, so
-  `src/test/observerMock.ts` drives it by hand: fast and precise for the logic,
-  but it never proves the real mechanism fires.
-- **Playwright** (`e2e/*.spec.ts`) — the two things jsdom structurally cannot
-  cover: that scrolling a real card into view in a real browser actually loads
-  the next page (`e2e/scroll.spec.ts`), and an `axe-core` scan of the live DOM,
-  including the reader with its injected third-party HTML open
-  (`e2e/a11y.spec.ts`). The Wikimedia API is mocked at the network layer
-  (`e2e/mockWikipedia.ts`) — deterministic and offline, not a live-API
-  smoke test.
+`npm test` is Vitest under jsdom — components, composables, and the Wikimedia
+API boundary. Fast and precise for logic, but jsdom has no
+`IntersectionObserver` (`src/test/observerMock.ts` drives it by hand), no CSP
+implementation, and no real focus or Tab handling — so it can assert the code
+_would_ do the right thing without ever proving a browser agrees.
+
+`npm run test:e2e` is Playwright against `vite preview` of a **production
+build**, not the dev server — the CSP meta tag and the hashed theme script
+only exist in built output, and the dev server's own HMR client changes what
+`script-src` has to allow. It covers what jsdom structurally cannot:
+
+| Spec                             | What jsdom can't answer                                                                                                        |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `scroll.spec.ts`                 | Does scrolling a real card into view actually load the next page? (`IntersectionObserver` is stubbed by hand everywhere else.) |
+| `a11y.spec.ts`                   | An `axe-core` scan of the live DOM in both themes, feed and open reader — this is what caught two real WCAG AA contrast bugs.  |
+| `csp.spec.ts`                    | Is the policy actually _enforced_? `src/test/csp.test.ts` only proves the policy text is self-consistent.                      |
+| `reader.spec.ts`                 | Does sanitised HTML stay inert against **live XSS payloads** once a real parser touches it, not just as a returned string?     |
+| `keyboard.spec.ts`               | Do `j`/`k` move real DOM focus (`focus()`/`scrollIntoView()` are no-ops under jsdom)?                                          |
+| `modal-focus.spec.ts`            | Does Tab actually stay trapped in the dialog (jsdom's Tab doesn't move focus at all)?                                          |
+| `deep-links.spec.ts`             | Does `pushState`/`popstate`/Back actually agree with the URL?                                                                  |
+| `feed-error.spec.ts`             | A failed first load and a failed second page, against the real error UI.                                                       |
+| `language-category-sort.spec.ts` | Language switching, category browsing, and search sort, end to end.                                                            |
+
+Three traps worth knowing if you're adding to `csp.spec.ts` or `reader.spec.ts`:
+`page.evaluate` runs in a world exempt from the page's own CSP, so `eval()`
+succeeding there proves nothing; an `innerHTML`-inserted `<script>` never
+executes regardless of policy, so a probe has to append a real node instead;
+and a blocked request looks identical to an unreachable host unless the probe
+target is one the interception layer actually serves.
+
+The Wikimedia API is mocked at the network layer, in two modules rather than
+one shared one — `e2e/mockWikipedia.ts` (simple fixtures, multi-language) for
+`scroll`/`a11y`/`language-category-sort`, and `e2e/routes.ts` +
+`e2e/fixtures.ts` (an offline toggle, a request log, and a fixture article
+carrying live XSS payloads) for the security and error-state specs. Neither
+needs what the other carries, and merging them would mean threading an
+offline flag and a hostile-HTML fixture through the scroll and a11y specs for
+no reason.
 
 ## Where things live
 

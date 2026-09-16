@@ -15,7 +15,16 @@ import globals from "globals";
   exactly what these rules catch.
 */
 export default tseslint.config(
-  { ignores: ["dist/**", "coverage/**", "node_modules/**"] },
+  {
+    ignores: [
+      "dist/**",
+      "coverage/**",
+      "node_modules/**",
+      // Playwright's own output: traces, screenshots and the HTML report.
+      "test-results/**",
+      "playwright-report/**",
+    ],
+  },
 
   js.configs.recommended,
   ...tseslint.configs.recommended,
