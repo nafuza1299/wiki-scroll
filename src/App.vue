@@ -3,6 +3,7 @@ import { computed, onErrorCaptured, ref } from "vue";
 import ArticleCard from "./components/ArticleCard/ArticleCard.vue";
 import ArticleReader from "./components/ArticleReader/ArticleReader.vue";
 import Button from "./components/Button/Button.vue";
+import LanguagePicker from "./components/LanguagePicker/LanguagePicker.vue";
 import { Modal } from "./components/Modal/Modal";
 import Notice from "./components/Notice/Notice.vue";
 import SearchBar from "./components/SearchBar/SearchBar.vue";
@@ -56,6 +57,13 @@ function backToRandom(): void {
 
 function toggleView(): void {
   navigate({ ...route.value, view: view.value === "saved" ? "feed" : "saved", article: null });
+}
+
+// No replace: true here — a language switch is a deliberate, occasional
+// choice like toggleView, not per-keystroke typing like search, so it earns
+// its own history entry and Back undoes it.
+function setLang(next: string): void {
+  navigate({ ...route.value, lang: next });
 }
 
 const { articles, status, more, error, retry, step, activeArticle, registerCard } = useArticleFeed(
@@ -182,6 +190,7 @@ function reload(): void {
           >
             ?
           </Button>
+          <LanguagePicker :model-value="lang" @update:model-value="setLang" />
           <ThemeToggle />
         </div>
       </header>
