@@ -98,23 +98,52 @@ describe("CategoryFilter", () => {
     expect(toField()).toHaveValue("1950");
   });
 
-  /*
-    jsdom's UA stylesheet sets `datalist { display: none }`, and Testing
-    Library excludes hidden elements from role queries by default — hence
-    `{ hidden: true }` below. <option> maps to role "option" regardless of
-    whether its parent is a <select> or a <datalist>.
-  */
-  it("offers the curated categories as suggestions when lang is English", () => {
+  it("shows the curated categories as a real dropdown when the field is focused", async () => {
     render(CategoryFilter, { props: baseProps });
 
-    const options = screen.getAllByRole("option", { hidden: true });
-    expect(options.map((option) => (option as HTMLOptionElement).value)).toEqual(CATEGORIES);
+    await userEvent.click(categoryField());
+
+    for (const name of CATEGORIES) {
+      expect(screen.getByRole("button", { name })).toBeVisible();
+    }
   });
 
-  it("offers no suggestions for a non-English language", () => {
+  it("shows no dropdown for a non-English language", async () => {
     render(CategoryFilter, { props: { ...baseProps, lang: "fr" } });
 
-    expect(screen.queryAllByRole("option", { hidden: true })).toHaveLength(0);
+    await userEvent.click(categoryField());
+
+    expect(screen.queryByRole("button", { name: "Physics" })).not.toBeInTheDocument();
+  });
+
+  it("filters the dropdown as the category is typed", async () => {
+    render(CategoryFilter, { props: baseProps });
+
+    await userEvent.type(categoryField(), "phy");
+
+    expect(screen.getByRole("button", { name: "Physics" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Chemistry" })).not.toBeInTheDocument();
+  });
+
+  it("selecting a suggestion fills the field and closes the dropdown", async () => {
+    render(CategoryFilter, { props: baseProps });
+
+    await userEvent.click(categoryField());
+    await userEvent.click(screen.getByRole("button", { name: "Physics" }));
+
+    expect(categoryField()).toHaveValue("Physics");
+    expect(screen.queryByRole("button", { name: "Chemistry" })).not.toBeInTheDocument();
+  });
+
+  it("closes the dropdown on Escape", async () => {
+    render(CategoryFilter, { props: baseProps });
+
+    await userEvent.click(categoryField());
+    expect(screen.getByRole("button", { name: "Physics" })).toBeVisible();
+
+    await userEvent.keyboard("{Escape}");
+
+    expect(screen.queryByRole("button", { name: "Physics" })).not.toBeInTheDocument();
   });
 
   // The dropdown is a shortcut, not a restriction — this is the behaviour

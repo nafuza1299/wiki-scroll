@@ -38,14 +38,20 @@ and decides what `submit`/`clear` do. In `App.vue` that's
 - The three fields stay in step with the props from outside (a shared link, Back,
   or typing `"Category:Physics"` into the search box instead), the same
   `watch`-and-compare pattern `SearchBar` uses for its own draft.
-- The category field is a native combobox (`<input list>` + `<datalist>`, the
-  same mechanism `SearchBar` uses for its own suggestions): when `lang` is
-  `"en"`, the browser offers a small curated list of popular category names
-  from `src/lib/wikipedia/categories.ts`. Typing any other category name —
-  not just ones in the list — still works exactly as it always has; the
-  dropdown is a shortcut, never a restriction. For any other language, no
-  options are offered and the field is plain free text, since the curated
-  names are only written in English.
+- The category field opens a real, always-rendered dropdown on focus (closed
+  on blur or Escape) listing `src/lib/wikipedia/categories.ts`'s curated
+  categories, filtered as you type. This is a custom list, not `<input
+list>` + `<datalist>` — that was tried first, but native datalist support
+  is genuinely unreliable (Safari barely renders the popup, and even where a
+  browser does show one it's an OS-level layer invisible outside a real
+  click-and-type interaction). Only shown when `lang` is `"en"`; every other
+  language gets no dropdown and the field is plain free text, since the
+  curated names are only written in English. Typing any category name — not
+  just ones in the list — still submits exactly as it always has; the
+  dropdown is a shortcut, never a restriction.
+- Clicking a suggestion uses `@mousedown.prevent` rather than `@click`, so it
+  fires before the input's own `blur` would otherwise close the dropdown out
+  from under the click.
 
 ## Usage
 
