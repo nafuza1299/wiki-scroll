@@ -350,6 +350,7 @@ function reload(): void {
           :category="route.category ?? ''"
           :year-from="route.yearFrom"
           :year-to="route.yearTo"
+          :lang="lang"
           @submit="setCategory"
           @clear="backToRandom"
         />

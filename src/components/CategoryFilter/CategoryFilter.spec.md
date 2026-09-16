@@ -10,6 +10,7 @@ together as a single seed for the feed's `category` mode.
 | `category` | `string`         | Yes      | The category currently driving the feed, bare name, no `"Category:"` prefix. Empty when category mode isn't active. |
 | `yearFrom` | `number \| null` | Yes      | Inclusive lower bound on creation year. `null` means unset.                                                         |
 | `yearTo`   | `number \| null` | Yes      | Inclusive upper bound on creation year. `null` means unset.                                                         |
+| `lang`     | `string`         | Yes      | Which wiki language the field is for. Only `"en"` offers curated category suggestions.                              |
 
 ## Emits
 
@@ -37,6 +38,14 @@ and decides what `submit`/`clear` do. In `App.vue` that's
 - The three fields stay in step with the props from outside (a shared link, Back,
   or typing `"Category:Physics"` into the search box instead), the same
   `watch`-and-compare pattern `SearchBar` uses for its own draft.
+- The category field is a native combobox (`<input list>` + `<datalist>`, the
+  same mechanism `SearchBar` uses for its own suggestions): when `lang` is
+  `"en"`, the browser offers a small curated list of popular category names
+  from `src/lib/wikipedia/categories.ts`. Typing any other category name —
+  not just ones in the list — still works exactly as it always has; the
+  dropdown is a shortcut, never a restriction. For any other language, no
+  options are offered and the field is plain free text, since the curated
+  names are only written in English.
 
 ## Usage
 
@@ -45,6 +54,7 @@ and decides what `submit`/`clear` do. In `App.vue` that's
   :category="route.category ?? ''"
   :year-from="route.yearFrom"
   :year-to="route.yearTo"
+  :lang="lang"
   @submit="setCategory"
   @clear="backToRandom"
 />
