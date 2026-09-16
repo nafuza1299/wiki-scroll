@@ -122,3 +122,28 @@ export function createdDateUrl(lang: string, title: string): string {
   });
   return `${actionBase(lang)}?${params.toString()}`;
 }
+
+/**
+ * Members of a category as a feed page. `gcmcontinue` is an opaque cursor —
+ * unlike search's numeric `sroffset`, it has to be passed back exactly as the
+ * API returned it, not incremented by the caller.
+ */
+export function categoryMembersUrl(
+  lang: string,
+  category: string,
+  limit: number,
+  gcmcontinue?: string,
+): string {
+  const params = new URLSearchParams({
+    action: "query",
+    format: "json",
+    generator: "categorymembers",
+    gcmtitle: `Category:${category}`,
+    gcmtype: "page",
+    gcmnamespace: "0",
+    gcmlimit: String(limit),
+    origin: "*",
+  });
+  if (gcmcontinue) params.set("gcmcontinue", gcmcontinue);
+  return `${actionBase(lang)}?${params.toString()}`;
+}

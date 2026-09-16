@@ -64,6 +64,22 @@ function serveArticles(options: { searchHits?: number; searchTotal?: number } = 
     jsonResponse({ pages: [summary(2001), summary(2002), summary(2003)] }),
   );
 
+  mockRoute("generator=categorymembers", () =>
+    jsonResponse({
+      query: {
+        pages: {
+          "3001": { pageid: 3001, title: "Category Member 1" },
+          "3002": { pageid: 3002, title: "Category Member 2" },
+        },
+      },
+    }),
+  );
+  mockRoute("/page/summary/Category_Member", ({ url }) => {
+    const title = decodeURIComponent(url.split("/page/summary/")[1] ?? "");
+    const id = title.endsWith("1") ? 3001 : 3002;
+    return jsonResponse({ ...summary(id), title });
+  });
+
   mockRoute("/metrics/pageviews", () => jsonResponse({ items: [{ views: 5 }] }));
   mockRoute("prop=revisions", () => jsonResponse({ query: { pages: {} } }));
 }
@@ -342,6 +358,20 @@ describe("useArticleFeed", () => {
     await vi.waitFor(() => expect(feed().status.value).toBe("ready"), waitOptions);
 
     expect(feed().articles.value.length).toBeGreaterThan(0);
+  });
+
+  it("loads category members in category mode", async () => {
+    serveArticles();
+    const mode = ref<FeedMode>({ kind: "category", name: "Physics" });
+    const { feed } = mountFeed(mode);
+
+    await vi.waitFor(() => expect(feed().status.value).toBe("ready"), waitOptions);
+
+    expect(
+      feed()
+        .articles.value.map((a) => a.id)
+        .sort(),
+    ).toEqual([3001, 3002]);
   });
 
   it("loads related articles in one request and then stops", async () => {

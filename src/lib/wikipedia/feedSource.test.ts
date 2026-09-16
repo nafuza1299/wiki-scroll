@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   enrichArticle,
+  loadCategoryPage,
   loadRandomPage,
   loadRelatedPage,
   loadSearchPage,
@@ -302,6 +303,124 @@ describe("loadRelatedPage", () => {
     });
 
     expect(page.articles).toEqual([]);
+  });
+});
+
+describe("loadCategoryPage", () => {
+  function serveCategory(titles: string[], gcmcontinue?: string): void {
+    mockRoute("generator=categorymembers", () =>
+      jsonResponse({
+        query: {
+          pages: Object.fromEntries(
+            titles.map((title, i) => [String(200 + i), { pageid: 200 + i, title }]),
+          ),
+        },
+        ...(gcmcontinue === undefined ? {} : { continue: { gcmcontinue } }),
+      }),
+    );
+    mockRoute("/page/summary/", ({ url }) => {
+      const title = decodeURIComponent(url.split("/page/summary/")[1] ?? "");
+      return jsonResponse({ ...summary(200 + titles.indexOf(title.replace(/_/g, " "))), title });
+    });
+  }
+
+  it("resolves category members to full articles", async () => {
+    serveCategory(["Electron", "Proton"]);
+
+    const page = await loadCategoryPage({
+      lang: "en",
+      name: "Physics",
+      size: 10,
+      cursor: undefined,
+      signal: new AbortController().signal,
+    });
+
+    expect(page.articles.map((a) => a.title).sort()).toEqual(["Electron", "Proton"]);
+  });
+
+  it("returns an empty, exhausted page for a category with no members", async () => {
+    mockRoute("generator=categorymembers", () => jsonResponse({ query: { pages: {} } }));
+
+    const page = await loadCategoryPage({
+      lang: "en",
+      name: "Nonexistent",
+      size: 10,
+      cursor: undefined,
+      signal: new AbortController().signal,
+    });
+
+    expect(page.articles).toEqual([]);
+    expect(page.exhausted).toBe(true);
+  });
+
+  it("passes the continuation cursor through untouched", async () => {
+    serveCategory(["Electron"], "20260101000000|201");
+
+    const page = await loadCategoryPage({
+      lang: "en",
+      name: "Physics",
+      size: 10,
+      cursor: undefined,
+      signal: new AbortController().signal,
+    });
+
+    expect(page.exhausted).toBe(false);
+    expect(page.nextCursor).toBe("20260101000000|201");
+  });
+
+  it("reports exhaustion when the API offers no continuation", async () => {
+    serveCategory(["Electron"]);
+
+    const page = await loadCategoryPage({
+      lang: "en",
+      name: "Physics",
+      size: 10,
+      cursor: undefined,
+      signal: new AbortController().signal,
+    });
+
+    expect(page.exhausted).toBe(true);
+    expect(page.nextCursor).toBeUndefined();
+  });
+
+  it("keeps the members whose summaries resolved", async () => {
+    mockRoute("generator=categorymembers", () =>
+      jsonResponse({
+        query: {
+          pages: {
+            "1": { pageid: 1, title: "Good" },
+            "2": { pageid: 2, title: "Bad" },
+          },
+        },
+      }),
+    );
+    mockRoute("/page/summary/", ({ url }) =>
+      url.includes("Bad") ? errorResponse(404) : jsonResponse({ ...summary(1), title: "Good" }),
+    );
+
+    const page = await loadCategoryPage({
+      lang: "en",
+      name: "Physics",
+      size: 10,
+      cursor: undefined,
+      signal: new AbortController().signal,
+    });
+
+    expect(page.articles.map((a) => a.title)).toEqual(["Good"]);
+  });
+
+  it("tags every resolved article with the requested language", async () => {
+    serveCategory(["Elektron"]);
+
+    const page = await loadCategoryPage({
+      lang: "de",
+      name: "Physik",
+      size: 10,
+      cursor: undefined,
+      signal: new AbortController().signal,
+    });
+
+    expect(page.articles.every((a) => a.lang === "de")).toBe(true);
   });
 });
 

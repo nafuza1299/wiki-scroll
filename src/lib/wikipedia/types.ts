@@ -51,6 +51,18 @@ export interface RelatedResponse {
 /** `action=opensearch` returns a positional array, not an object. */
 export type OpenSearchResponse = [string, string[], string[], string[]];
 
+/**
+ * `action=query&generator=categorymembers` on the Action API. Pages come back
+ * as a pageid-keyed dict — the same shape RevisionsResponse already uses —
+ * not the array `list=search` returns.
+ */
+export interface CategoryMembersResponse {
+  continue?: { gcmcontinue?: string };
+  query?: {
+    pages?: Record<string, { pageid?: number; title?: string } | undefined>;
+  };
+}
+
 export function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }

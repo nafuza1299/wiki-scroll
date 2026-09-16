@@ -12,6 +12,7 @@ import { isAbortError } from "../lib/http";
 import type { Article } from "../lib/wikipedia/article";
 import {
   enrichArticle,
+  loadCategoryPage,
   loadRandomPage,
   loadRelatedPage,
   loadSearchPage,
@@ -92,6 +93,7 @@ export function useArticleFeed(
 
   let controller: AbortController | null = null;
   let searchOffset = 0;
+  let categoryCursor: string | undefined;
   /*
     step() scrolls smoothly, and the observer fires for every card passed on the
     way, each one overwriting activeIndex. Without this guard, pressing j once
@@ -164,8 +166,15 @@ export function useArticleFeed(
           signal,
           exclude: excludedForSearch(),
         });
-      // "category" falls through to random until loadCategoryPage exists —
-      // nothing produces this mode yet, so this branch is unreachable today.
+      case "category":
+        return loadCategoryPage({
+          lang: lang.value,
+          name: current.name,
+          size: BATCH_SIZE,
+          cursor: initial ? undefined : categoryCursor,
+          signal,
+          exclude: excludedForSearch(),
+        });
       default:
         return loadRandomPage({ lang: lang.value, size: BATCH_SIZE, signal, exclude: excluded() });
     }
@@ -182,6 +191,7 @@ export function useArticleFeed(
       const page = await loadPage(mode.value, initial, signal);
       if (signal.aborted) return;
       searchOffset = page.nextOffset ?? searchOffset;
+      categoryCursor = page.nextCursor ?? categoryCursor;
       // Marked on arrival rather than on scroll-past: that is what makes a
       // refresh continue where it left off instead of re-serving the same page.
       seen.remember(page.articles.map((article) => ({ lang: article.lang, id: article.id })));
@@ -245,6 +255,7 @@ export function useArticleFeed(
       controller?.abort();
       controller = new AbortController();
       searchOffset = 0;
+      categoryCursor = undefined;
       dispatch({ type: "mode/set", mode: mode.value, lang: lang.value });
       void load(true);
     },

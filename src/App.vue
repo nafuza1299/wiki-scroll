@@ -32,27 +32,52 @@ history.scrollRestoration = "manual";
 const { route, navigate, canGoBack, back } = useAppRoute();
 
 const view = computed(() => route.value.view);
-const query = computed(() => route.value.query);
-
 const lang = computed(() => route.value.lang);
 
 const mode = computed<FeedMode>(() => {
-  if (route.value.related) return { kind: "related", title: route.value.related };
   if (route.value.query)
     return { kind: "search", query: route.value.query, sort: route.value.sort };
+  if (route.value.category) return { kind: "category", name: route.value.category };
+  if (route.value.related) return { kind: "related", title: route.value.related };
   return { kind: "random" };
 });
 
+/*
+  The search box keeps showing what was typed while a category seed is active,
+  unlike `related` mode (entered by a button, never reflected in the box).
+  route.value.query is cleared when a Category: seed is set, so this is what
+  makes "Category:Physics" still visible for editing rather than the field
+  going blank the instant it takes effect.
+*/
+const searchBoxValue = computed(() =>
+  route.value.category ? `Category:${route.value.category}` : route.value.query,
+);
+
+const CATEGORY_PREFIX = /^category:/i;
+
 function search(next: string): void {
-  navigate({ ...route.value, query: next, related: null, article: null }, { replace: true });
+  const trimmed = next.trim();
+  const match = CATEGORY_PREFIX.exec(trimmed);
+  if (match) {
+    const name = trimmed.slice(match[0].length).trim();
+    navigate(
+      { ...route.value, query: "", category: name || null, related: null, article: null },
+      { replace: true },
+    );
+    return;
+  }
+  navigate(
+    { ...route.value, query: next, category: null, related: null, article: null },
+    { replace: true },
+  );
 }
 
 function showRelatedTo(title: string): void {
-  navigate({ ...defaultRoute, related: title });
+  navigate({ ...defaultRoute, lang: route.value.lang, related: title });
 }
 
 function backToRandom(): void {
-  navigate({ ...route.value, query: "", related: null });
+  navigate({ ...route.value, query: "", category: null, related: null });
 }
 
 function toggleView(): void {
@@ -237,7 +262,12 @@ function reload(): void {
       </main>
 
       <main v-else class="flex flex-col gap-3">
-        <SearchBar ref="searchBar" :model-value="query" :lang="lang" @update:model-value="search" />
+        <SearchBar
+          ref="searchBar"
+          :model-value="searchBoxValue"
+          :lang="lang"
+          @update:model-value="search"
+        />
 
         <!-- Says what the feed is currently showing, and how to leave it. -->
         <div
@@ -280,11 +310,15 @@ function reload(): void {
 
         <Notice
           v-else-if="status === 'empty'"
-          :title="mode.kind === 'search' ? 'No matches' : 'Nothing to show'"
+          :title="
+            mode.kind === 'search' || mode.kind === 'category' ? 'No matches' : 'Nothing to show'
+          "
           :message="
             mode.kind === 'search'
               ? 'Try a different search.'
-              : 'Wikipedia returned no articles we could display.'
+              : mode.kind === 'category'
+                ? 'That category may not exist, or has no articles.'
+                : 'Wikipedia returned no articles we could display.'
           "
         >
           <Button variant="secondary" @click="mode.kind === 'random' ? retry() : backToRandom()">

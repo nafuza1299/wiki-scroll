@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  categoryMembersUrl,
   createdDateUrl,
   openSearchUrl,
   pageviews30dUrl,
@@ -135,6 +136,34 @@ describe("openSearchUrl", () => {
 
   it("sends the requested suggestion limit", () => {
     expect(new URL(openSearchUrl("en", "mar", 5)).searchParams.get("limit")).toBe("5");
+  });
+});
+
+describe("categoryMembersUrl", () => {
+  it("asks for pages in the given category, prefixed as MediaWiki expects", () => {
+    const params = new URL(categoryMembersUrl("en", "Physics", 10)).searchParams;
+
+    expect(params.get("generator")).toBe("categorymembers");
+    expect(params.get("gcmtitle")).toBe("Category:Physics");
+    expect(params.get("gcmtype")).toBe("page");
+    expect(params.get("gcmnamespace")).toBe("0");
+    expect(params.get("gcmlimit")).toBe("10");
+    expect(params.get("origin")).toBe("*");
+  });
+
+  it("omits gcmcontinue on the first page", () => {
+    expect(new URL(categoryMembersUrl("en", "Physics", 10)).searchParams.has("gcmcontinue")).toBe(
+      false,
+    );
+  });
+
+  it("passes an opaque continuation cursor through unchanged", () => {
+    const params = new URL(categoryMembersUrl("en", "Physics", 10, "abc|123")).searchParams;
+    expect(params.get("gcmcontinue")).toBe("abc|123");
+  });
+
+  it("uses the requested language's host", () => {
+    expect(new URL(categoryMembersUrl("de", "Physik", 10)).origin).toBe("https://de.wikipedia.org");
   });
 });
 

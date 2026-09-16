@@ -1,6 +1,7 @@
 import { fetchJson } from "../http";
 import { oldestRevisionTimestamp, sumPageviews, toArticle, type Article } from "./article";
 import {
+  categoryMembersUrl,
   createdDateUrl,
   openSearchUrl,
   pageviews30dUrl,
@@ -10,6 +11,7 @@ import {
   summaryUrl,
 } from "./queries";
 import type {
+  CategoryMembersResponse,
   OpenSearchResponse,
   PageviewsResponse,
   RelatedResponse,
@@ -198,6 +200,55 @@ export async function loadRelatedPage(options: {
 
   // One request returns everything related there is.
   return { articles, discarded, exhausted: true };
+}
+
+/**
+ * A category browsed as a feed.
+ *
+ * Structurally a sibling of loadSearchPage: `generator=categorymembers` gives
+ * titles, not full summaries, so it reuses the exact summariesFor() round-trip
+ * search already relies on — one extra request per article, but no second
+ * summary-parsing path to maintain for one entry point.
+ *
+ * Continuation is `gcmcontinue`, an opaque cursor, not search's numeric
+ * `sroffset` — hence FeedPageResult.nextCursor rather than reusing nextOffset.
+ *
+ * Uses excludedForSearch() (on-screen dedup only), the same choice loadSearchPage
+ * makes and for the same reason: hiding a category member because it was read
+ * last week would look like the listing is broken, not like a feature.
+ */
+export async function loadCategoryPage(options: {
+  lang: string;
+  name: string;
+  size: number;
+  cursor: string | undefined;
+  signal: AbortSignal;
+  exclude?: (id: number) => boolean;
+}): Promise<FeedPageResult> {
+  const { lang, name, size, cursor, signal, exclude } = options;
+
+  const response = await fetchJson<CategoryMembersResponse>(
+    categoryMembersUrl(lang, name, size, cursor),
+    { signal },
+  );
+  const pages = response.query?.pages ?? {};
+  const titles = Object.values(pages)
+    .map((page) => page?.title)
+    .filter((title): title is string => typeof title === "string");
+
+  const nextCursor = response.continue?.gcmcontinue;
+  const exhausted = nextCursor === undefined;
+
+  if (titles.length === 0) {
+    return { articles: [], discarded: 0, exhausted: true };
+  }
+
+  const { articles, discarded } = collectPage(
+    await summariesFor(lang, titles, signal),
+    size,
+    exclude,
+  );
+  return { articles, discarded, exhausted, nextCursor };
 }
 
 /** Title suggestions for the search box. Never throws — suggestions are optional. */
