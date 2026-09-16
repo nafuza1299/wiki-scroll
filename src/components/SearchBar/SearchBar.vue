@@ -8,10 +8,17 @@ export interface SearchBarProps {
   modelValue: string;
   /** Which wiki suggestions and search should be drawn from. */
   lang: string;
+  sort: "relevance" | "recent";
+  /** A sort order is meaningless for "related" or "category" seeds — only a
+   *  text search has one, so the control is hidden rather than disabled. */
+  showSort: boolean;
 }
 
 const props = defineProps<SearchBarProps>();
-const emit = defineEmits<{ "update:modelValue": [value: string] }>();
+const emit = defineEmits<{
+  "update:modelValue": [value: string];
+  "update:sort": [value: "relevance" | "recent"];
+}>();
 
 const draft = ref(props.modelValue);
 const suggestions = ref<string[]>([]);
@@ -99,6 +106,20 @@ defineExpose({
     <datalist :id="listId">
       <option v-for="title in suggestions" :key="title" :value="title" />
     </datalist>
+    <!-- A refinement of this search specifically, so it sits next to the field
+         it refines rather than as a global control in the header. -->
+    <select
+      v-if="showSort"
+      :value="sort"
+      aria-label="Sort search results"
+      class="rounded-md border border-border bg-surface px-2 py-2 text-sm text-text focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+      @change="
+        emit('update:sort', ($event.target as HTMLSelectElement).value as 'relevance' | 'recent')
+      "
+    >
+      <option value="relevance">Most relevant</option>
+      <option value="recent">Recently edited</option>
+    </select>
     <Button type="submit" size="sm" variant="secondary">Search</Button>
     <Button v-if="modelValue" size="sm" variant="ghost" @click="clear">Clear</Button>
   </form>

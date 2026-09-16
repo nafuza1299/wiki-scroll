@@ -33,6 +33,7 @@ const { route, navigate, canGoBack, back } = useAppRoute();
 
 const view = computed(() => route.value.view);
 const lang = computed(() => route.value.lang);
+const sort = computed(() => route.value.sort);
 
 const mode = computed<FeedMode>(() => {
   if (route.value.query)
@@ -89,6 +90,12 @@ function toggleView(): void {
 // its own history entry and Back undoes it.
 function setLang(next: string): void {
   navigate({ ...route.value, lang: next });
+}
+
+// replace: true, matching search() — a live refinement of the same results,
+// not a new navigation to a different place.
+function setSort(next: "relevance" | "recent"): void {
+  navigate({ ...route.value, sort: next }, { replace: true });
 }
 
 const { articles, status, more, error, retry, step, activeArticle, registerCard } = useArticleFeed(
@@ -266,7 +273,10 @@ function reload(): void {
           ref="searchBar"
           :model-value="searchBoxValue"
           :lang="lang"
+          :sort="sort"
+          :show-sort="mode.kind === 'search'"
           @update:model-value="search"
+          @update:sort="setSort"
         />
 
         <!-- Says what the feed is currently showing, and how to leave it. -->
