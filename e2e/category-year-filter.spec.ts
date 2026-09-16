@@ -114,3 +114,29 @@ test("clearing the category filter returns to the random feed", async ({ page })
   await expect(page).not.toHaveURL(/[?&]cat=/);
   await expect(page.getByLabel("From year")).toBeDisabled();
 });
+
+test("the category field offers curated suggestions and still accepts free text", async ({
+  page,
+}) => {
+  await mockWikipediaApi(page);
+  await page.goto("/");
+  await expect(page.locator("article[data-index]")).toHaveCount(10);
+
+  // Confirms the curated dropdown actually renders in a real browser — jsdom's
+  // stubbed-out datalist display doesn't prove that (see CategoryFilter.test.ts).
+  const categoryInput = page.getByLabel("Category");
+  const listId = await categoryInput.getAttribute("list");
+  expect(listId).toBeTruthy();
+  await expect(page.locator(`#${listId} option[value="Physics"]`)).toHaveCount(1);
+
+  // A name absent from the curated list still works end to end — the dropdown
+  // is a shortcut, not a restriction.
+  const [categoryRequest] = await Promise.all([
+    page.waitForRequest((req) => req.url().includes("generator=categorymembers")),
+    (async () => {
+      await categoryInput.fill("Renaissance sculpture");
+      await page.getByRole("button", { name: "Browse category" }).click();
+    })(),
+  ]);
+  expect(categoryRequest.url()).toContain("gcmtitle=Category%3ARenaissance+sculpture");
+});

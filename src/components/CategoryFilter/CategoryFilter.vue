@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref, watch } from "vue";
+import { computed, ref, useId, watch } from "vue";
 import Button from "../Button/Button.vue";
 import { parseYear } from "../../lib/routes";
+import { CATEGORIES } from "../../lib/wikipedia/categories";
 
 export interface CategoryFilterProps {
   /** The category currently driving the feed, bare name with no "Category:"
@@ -11,6 +12,12 @@ export interface CategoryFilterProps {
    *  disabled) while `category` is empty. */
   yearFrom: number | null;
   yearTo: number | null;
+  /** Which wiki language the field is for. Only `"en"` offers curated
+   *  category suggestions — CATEGORIES is English-only text, and suggesting
+   *  it for another language would mean a name that silently returns zero
+   *  results there. Every other language is plain free text, same as before
+   *  this dropdown existed. */
+  lang: string;
 }
 
 const props = defineProps<CategoryFilterProps>();
@@ -26,6 +33,12 @@ const emit = defineEmits<{
 const draftCategory = ref(props.category);
 const draftYearFrom = ref(props.yearFrom === null ? "" : String(props.yearFrom));
 const draftYearTo = ref(props.yearTo === null ? "" : String(props.yearTo));
+
+const listId = useId();
+// The dropdown is pure convenience: an empty list here just means the native
+// <datalist> offers nothing, which is indistinguishable from a plain text
+// field — exactly how this input behaved before it existed.
+const categoryOptions = computed(() => (props.lang === "en" ? CATEGORIES : []));
 
 // Keeps the fields in step when the seed changes from elsewhere — a shared
 // link, Back, or the "Category:" prefix typed into the search box instead.
@@ -66,11 +79,18 @@ function clear(): void {
       <input
         v-model="draftCategory"
         type="text"
+        :list="listId"
         placeholder="Category, e.g. Physics"
         autocomplete="off"
         class="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-text placeholder:text-text-muted focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
       />
     </label>
+    <!-- A native datalist: keyboard behaviour and screen-reader support for
+         free, and it never restricts the field — any text not in this list
+         submits exactly the same way a listed one does. -->
+    <datalist :id="listId">
+      <option v-for="name in categoryOptions" :key="name" :value="name" />
+    </datalist>
     <label class="w-24">
       <span class="sr-only">From year</span>
       <input
