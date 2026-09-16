@@ -45,6 +45,33 @@ describe("useFeedKeyboard", () => {
     expect(handlers.open).toHaveBeenCalledTimes(2);
   });
 
+  it("leaves Enter alone when a button has focus, so the button still activates", async () => {
+    const { handlers, getByRole } = mountKeyboard();
+    const button = getByRole("button", { name: "card" });
+    const activated = vi.fn();
+    button.addEventListener("click", activated);
+
+    button.focus();
+    await userEvent.keyboard("{Enter}");
+
+    // The shortcut stands down; the browser's own Enter-activates-a-button wins.
+    // Before this, preventDefault ran for every Enter regardless of focus, which
+    // killed the retry button, the help toggle and every control on a card.
+    expect(handlers.open).not.toHaveBeenCalled();
+    expect(activated).toHaveBeenCalledTimes(1);
+  });
+
+  it("still steps with j while a card button has focus", async () => {
+    const { handlers, getByRole } = mountKeyboard();
+
+    // step() moves focus onto a card's button, so j/k must keep working there —
+    // which is why only Enter consults the activatable list.
+    getByRole("button", { name: "card" }).focus();
+    await userEvent.keyboard("j");
+
+    expect(handlers.step).toHaveBeenCalledWith(1);
+  });
+
   it("saves with s, focuses search with /, and shows help with ?", async () => {
     const { handlers } = mountKeyboard();
 

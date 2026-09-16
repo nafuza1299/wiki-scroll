@@ -14,6 +14,18 @@ export interface FeedKeyboardHandlers {
 const FIELD_SELECTOR = "input, textarea, select, [contenteditable='true']";
 
 /*
+  Controls that already do something on Enter. Only Enter consults this list —
+  j/k/s must keep working while focus sits on a card, because step() deliberately
+  puts it there.
+
+  Without it, `case "Enter": event.preventDefault()` runs for every keypress
+  regardless of what has focus, so Enter stops activating the retry button, the
+  shortcuts toggle, "Back to random", and every control on a card. Space still
+  works, which is what makes it easy to miss.
+*/
+const ACTIVATABLE_SELECTOR = "button, a[href], summary, [role='button']";
+
+/*
   One document-level listener rather than per-card handlers: the feed is
   scroll-driven, so focus usually sits on <body> and a per-card handler would
   never fire.
@@ -48,6 +60,13 @@ export function useFeedKeyboard(handlers: FeedKeyboardHandlers): void {
         handlers.step(-1);
         break;
       case "Enter":
+        // Let the focused control have its own Enter. On a card that is the
+        // stretched title button, which opens the article anyway — so the
+        // shortcut loses nothing, and every other button gets its key back.
+        if (target instanceof Element && target.closest(ACTIVATABLE_SELECTOR)) return;
+        event.preventDefault();
+        handlers.open();
+        break;
       case "o":
         event.preventDefault();
         handlers.open();
