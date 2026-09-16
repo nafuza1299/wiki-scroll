@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, useId, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import Button from "../Button/Button.vue";
 import { parseYear } from "../../lib/routes";
 import { CATEGORIES } from "../../lib/wikipedia/categories";
@@ -34,11 +34,31 @@ const draftCategory = ref(props.category);
 const draftYearFrom = ref(props.yearFrom === null ? "" : String(props.yearFrom));
 const draftYearTo = ref(props.yearTo === null ? "" : String(props.yearTo));
 
-const listId = useId();
-// The dropdown is pure convenience: an empty list here just means the native
-// <datalist> offers nothing, which is indistinguishable from a plain text
-// field — exactly how this input behaved before it existed.
+// The dropdown is pure convenience: an empty list here just means nothing
+// renders, indistinguishable from a plain text field — exactly how this
+// input behaved before it existed.
 const categoryOptions = computed(() => (props.lang === "en" ? CATEGORIES : []));
+
+/*
+  A real dropdown, not <input list> + <datalist>. That was tried first — it
+  costs nothing and gets keyboard/screen-reader handling for free — but native
+  datalist support is genuinely unreliable: Safari barely renders the popup at
+  all, and even where a browser does show one, it's an OS-level layer outside
+  the page, invisible to anyone (including a screenshot) until they've already
+  clicked in and started typing. A visible, always-rendered-when-open list is
+  the only way to guarantee "there is a dropdown" is actually true.
+*/
+const isOpen = ref(false);
+const filteredCategories = computed(() => {
+  const query = draftCategory.value.trim().toLowerCase();
+  if (!query) return categoryOptions.value;
+  return categoryOptions.value.filter((name) => name.toLowerCase().includes(query));
+});
+
+function selectCategory(name: string): void {
+  draftCategory.value = name;
+  isOpen.value = false;
+}
 
 // Keeps the fields in step when the seed changes from elsewhere — a shared
 // link, Back, or the "Category:" prefix typed into the search box instead.
@@ -74,23 +94,45 @@ function clear(): void {
 
 <template>
   <form class="flex flex-wrap items-center gap-2" @submit.prevent="submit">
-    <label class="min-w-0 flex-1 basis-40">
-      <span class="sr-only">Category</span>
-      <input
-        v-model="draftCategory"
-        type="text"
-        :list="listId"
-        placeholder="Category, e.g. Physics"
-        autocomplete="off"
-        class="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-text placeholder:text-text-muted focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-      />
-    </label>
-    <!-- A native datalist: keyboard behaviour and screen-reader support for
-         free, and it never restricts the field — any text not in this list
-         submits exactly the same way a listed one does. -->
-    <datalist :id="listId">
-      <option v-for="name in categoryOptions" :key="name" :value="name" />
-    </datalist>
+    <div class="relative min-w-0 flex-1 basis-40">
+      <label class="block">
+        <span class="sr-only">Category</span>
+        <input
+          v-model="draftCategory"
+          type="text"
+          placeholder="Category, e.g. Physics"
+          autocomplete="off"
+          class="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-text placeholder:text-text-muted focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          @focus="isOpen = true"
+          @blur="isOpen = false"
+          @keydown.escape="isOpen = false"
+        />
+      </label>
+      <!--
+        A real, always-rendered list — see the isOpen/filteredCategories
+        comment above for why this replaced <input list> + <datalist>. A
+        sibling of the label, not nested in it: a <label> forwards a plain
+        click to its control, and nesting a <button> inside would make that
+        forwarding behaviour someone else's problem to reason about later.
+        @mousedown.prevent on each option stops the input's own blur from
+        firing before the click does; without it, the list would close
+        itself before the click ever registered.
+      -->
+      <ul
+        v-if="isOpen && filteredCategories.length"
+        class="absolute z-10 mt-1 max-h-48 w-full overflow-y-auto rounded-md border border-border bg-surface py-1 shadow-elevation"
+      >
+        <li v-for="name in filteredCategories" :key="name">
+          <button
+            type="button"
+            class="block w-full px-3 py-1.5 text-left text-sm text-text hover:bg-surface-hover focus-visible:bg-surface-hover focus-visible:outline-none"
+            @mousedown.prevent="selectCategory(name)"
+          >
+            {{ name }}
+          </button>
+        </li>
+      </ul>
+    </div>
     <label class="w-24">
       <span class="sr-only">From year</span>
       <input

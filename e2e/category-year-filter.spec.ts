@@ -122,12 +122,19 @@ test("the category field offers curated suggestions and still accepts free text"
   await page.goto("/");
   await expect(page.locator("article[data-index]")).toHaveCount(10);
 
-  // Confirms the curated dropdown actually renders in a real browser — jsdom's
-  // stubbed-out datalist display doesn't prove that (see CategoryFilter.test.ts).
+  // Confirms the curated dropdown actually opens and is genuinely visible in
+  // a real browser — it's a custom-rendered list rather than <input list> +
+  // <datalist> specifically because native datalist popups are unreliable
+  // (Safari barely renders them) and invisible outside a real interaction.
   const categoryInput = page.getByLabel("Category");
-  const listId = await categoryInput.getAttribute("list");
-  expect(listId).toBeTruthy();
-  await expect(page.locator(`#${listId} option[value="Physics"]`)).toHaveCount(1);
+  await categoryInput.click();
+  const suggestion = page.getByRole("button", { name: "Physics" });
+  await expect(suggestion).toBeVisible();
+
+  // Picking a suggestion fills the field and closes the dropdown.
+  await suggestion.click();
+  await expect(categoryInput).toHaveValue("Physics");
+  await expect(page.getByRole("button", { name: "Chemistry" })).not.toBeVisible();
 
   // A name absent from the curated list still works end to end — the dropdown
   // is a shortcut, not a restriction.
