@@ -175,6 +175,8 @@ export function useArticleFeed(
           cursor: initial ? undefined : categoryCursor,
           signal,
           exclude: excludedForSearch(),
+          yearFrom: current.yearFrom,
+          yearTo: current.yearTo,
         });
       default:
         return loadRandomPage({ lang: lang.value, size: BATCH_SIZE, signal, exclude: excluded() });

@@ -62,6 +62,7 @@ only exist in built output, and the dev server's own HMR client changes what
 | `deep-links.spec.ts`             | Does `pushState`/`popstate`/Back actually agree with the URL?                                                                  |
 | `feed-error.spec.ts`             | A failed first load and a failed second page, against the real error UI.                                                       |
 | `language-category-sort.spec.ts` | Language switching, category browsing, and search sort, end to end.                                                            |
+| `category-year-filter.spec.ts`   | The dedicated category+year-range control, its URL state, and that it composes with the search-box `Category:` shortcut.       |
 
 Three traps worth knowing if you're adding to `csp.spec.ts` or `reader.spec.ts`:
 `page.evaluate` runs in a world exempt from the page's own CSP, so `eval()`
@@ -72,7 +73,7 @@ target is one the interception layer actually serves.
 
 The Wikimedia API is mocked at the network layer, in two modules rather than
 one shared one — `e2e/mockWikipedia.ts` (simple fixtures, multi-language) for
-`scroll`/`a11y`/`language-category-sort`, and `e2e/routes.ts` +
+`scroll`/`a11y`/`language-category-sort`/`category-year-filter`, and `e2e/routes.ts` +
 `e2e/fixtures.ts` (an offline toggle, a request log, and a fixture article
 carrying live XSS payloads) for the security and error-state specs. Neither
 needs what the other carries, and merging them would mean threading an
@@ -138,6 +139,20 @@ titles, which get resolved to summaries the same way search results do.
 Searching can also be sorted by "Recently edited" instead of relevance, via
 `srsort=last_edit_desc` — a small `<select>` next to the search field, shown
 only while an actual text search is active.
+
+A dedicated `CategoryFilter` control (separate from the search-box shortcut
+above, though both write the same `?cat=` seed) adds an optional creation-year
+range — `?yf=`/`?yt=`, inclusive, either end optional. There is no API
+parameter for this: a category member's creation date isn't knowable until its
+own revision history is fetched, one request per title, the same cost
+`enrichArticle`'s `createdAt` already pays off the critical path for every
+other mode. A year filter can't stay off the critical path, since there's no
+way to decide whether a candidate belongs in the page without knowing its year
+first — so `loadCategoryPage` resolves it before filtering, only when a range
+is actually set, and requests more members per page to absorb the extra
+discard (a category can easily have most of its members outside a narrow
+range). The same request `enrichArticle` makes afterwards for the same title
+hits the HTTP cache, so filtering doesn't cost a second round of requests.
 
 **Possible follow-up:** random, search and their metadata all collapse into
 _single_ `action=query&generator=…` calls carrying extracts, thumbnails, URLs,

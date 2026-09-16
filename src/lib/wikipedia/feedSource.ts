@@ -1,5 +1,11 @@
 import { fetchJson } from "../http";
-import { oldestRevisionTimestamp, sumPageviews, toArticle, type Article } from "./article";
+import {
+  articleYear,
+  oldestRevisionTimestamp,
+  sumPageviews,
+  toArticle,
+  type Article,
+} from "./article";
 import {
   categoryMembersUrl,
   createdDateUrl,
@@ -22,6 +28,18 @@ import type {
 
 /** How many extra summaries to request so filtering still yields a full page. */
 const OVERFETCH = 1.5;
+
+/**
+ * A year-filtered category page discards far more than the usual "duplicate
+ * or already-seen" trickle — most of a category can fall outside a narrow
+ * range — so it asks for more members per underlying request than an
+ * unfiltered browse would. Capped well under the API's own anonymous-user
+ * ceiling (500); a category sparse enough to need more than this in one pass
+ * just yields a short page and the caller asks again with the next cursor,
+ * same as any other short page in this file.
+ */
+const CATEGORY_YEAR_OVERFETCH = 4;
+const CATEGORY_YEAR_LIMIT_CAP = 50;
 
 /*
   Two changes to how a page of the feed is loaded.
@@ -217,6 +235,13 @@ export async function loadRelatedPage(options: {
  * Uses excludedForSearch() (on-screen dedup only), the same choice loadSearchPage
  * makes and for the same reason: hiding a category member because it was read
  * last week would look like the listing is broken, not like a feature.
+ *
+ * An optional creation-year range narrows the category further. There is no
+ * query parameter for it — a member's creation date isn't knowable until its
+ * own history is fetched, one request per title, same as enrichArticle's
+ * createdAt already costs — so filtering happens after summariesFor()
+ * resolves, and CATEGORY_YEAR_OVERFETCH pulls more candidates per underlying
+ * request specifically to absorb that extra discard.
  */
 export async function loadCategoryPage(options: {
   lang: string;
@@ -225,11 +250,17 @@ export async function loadCategoryPage(options: {
   cursor: string | undefined;
   signal: AbortSignal;
   exclude?: (id: number) => boolean;
+  yearFrom?: number | null;
+  yearTo?: number | null;
 }): Promise<FeedPageResult> {
-  const { lang, name, size, cursor, signal, exclude } = options;
+  const { lang, name, size, cursor, signal, exclude, yearFrom, yearTo } = options;
+  const filteringByYear = yearFrom != null || yearTo != null;
+  const requestLimit = filteringByYear
+    ? Math.min(CATEGORY_YEAR_LIMIT_CAP, size * CATEGORY_YEAR_OVERFETCH)
+    : size;
 
   const response = await fetchJson<CategoryMembersResponse>(
-    categoryMembersUrl(lang, name, size, cursor),
+    categoryMembersUrl(lang, name, requestLimit, cursor),
     { signal },
   );
   const pages = response.query?.pages ?? {};
@@ -244,12 +275,50 @@ export async function loadCategoryPage(options: {
     return { articles: [], discarded: 0, exhausted: true };
   }
 
-  const { articles, discarded } = collectPage(
-    await summariesFor(lang, titles, signal),
-    size,
-    exclude,
-  );
+  let candidates = await summariesFor(lang, titles, signal);
+  if (filteringByYear) {
+    candidates = await filterByYear(lang, candidates, yearFrom ?? null, yearTo ?? null, signal);
+  }
+
+  const { articles, discarded } = collectPage(candidates, size, exclude);
   return { articles, discarded, exhausted, nextCursor };
+}
+
+/**
+ * Resolves each candidate's creation year and drops anything outside the
+ * requested range, including anything whose date couldn't be resolved at all
+ * — showing an unverified match would defeat a filter the user asked for
+ * explicitly.
+ *
+ * The request this makes (createdDateUrl) is the same one enrichArticle makes
+ * later for the same title, off the critical path, to backfill the "Created"
+ * caption. fetchJson caches by URL, so that second call is a cache hit, not a
+ * second request — filtering doesn't double the enrichment cost, it just
+ * moves this one field's fetch earlier for the titles that needed deciding.
+ */
+async function filterByYear(
+  lang: string,
+  candidates: ReadonlyArray<Article | null>,
+  yearFrom: number | null,
+  yearTo: number | null,
+  signal: AbortSignal,
+): Promise<Array<Article | null>> {
+  const settled = await Promise.allSettled(
+    candidates.map(async (article) => {
+      if (!article) return null;
+      const revisions = await fetchJson<RevisionsResponse>(createdDateUrl(lang, article.title), {
+        signal,
+        retries: 1,
+      });
+      const createdAt = oldestRevisionTimestamp(revisions);
+      const year = articleYear(createdAt);
+      if (year === null) return null;
+      if (yearFrom !== null && year < yearFrom) return null;
+      if (yearTo !== null && year > yearTo) return null;
+      return { ...article, createdAt };
+    }),
+  );
+  return settled.map((result) => (result.status === "fulfilled" ? result.value : null));
 }
 
 /** Title suggestions for the search box. Never throws — suggestions are optional. */

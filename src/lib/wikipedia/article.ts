@@ -59,6 +59,18 @@ export function sumPageviews(response: PageviewsResponse): number | null {
   return items.reduce((total, item) => total + (item?.views ?? 0), 0);
 }
 
+/**
+ * The calendar year an ISO timestamp falls in, or null for anything that
+ * isn't one — `createdAt` is nullable (the API can omit a revision entirely),
+ * and `new Date("garbage")` parses to `Invalid Date` rather than throwing, so
+ * this is the one place that has to notice and refuse it explicitly.
+ */
+export function articleYear(createdAt: string | null): number | null {
+  if (!createdAt) return null;
+  const year = new Date(createdAt).getUTCFullYear();
+  return Number.isNaN(year) ? null : year;
+}
+
 export function oldestRevisionTimestamp(response: RevisionsResponse): string | null {
   const pages = response.query?.pages;
   if (!pages) return null;
